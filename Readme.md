@@ -68,9 +68,6 @@ password_safe/
 4. Run app:
 
    ```bash
-   python -m venv .venv
-   source .venv/bin/activate   # Windows: .venv\Scripts\activate
-   pip install -r requirements.txt
    python main.py
    ```
 
@@ -81,8 +78,13 @@ password_safe/
 Using [PyInstaller](https://pyinstaller.org/):
 
 ```bash
-pyinstaller --onefile --noconsole --name PasswordSafe --icon=assets/app.ico password_safe/main.py
+# Windows requires an .ico for the EXE icon
+# Convert the provided PNG once (e.g., with Paint/online/Imagemagick) to icon-safe.ico
+pyinstaller --onefile --noconsole --name PasswordSafe --icon=icon-safe.ico main.py
 ```
+
+- Window/taskbar icon at runtime uses the app icon set in code (`icon-safe.png`).
+- Pinned/EXE icon uses the `.ico` embedded via the `--icon` flag above.
 
 * Output binary: `dist/PasswordSafe.exe`
 * Ship this `.exe` to end users.
@@ -111,6 +113,27 @@ MIT License – feel free to use and modify.
 - Export: The Export to JSON feature writes unencrypted data for portability. Treat exported files as sensitive and remove them when no longer needed.
   - Recommended: Use "Export Encrypted…" (default) for sharing or backup. A passphrase is required and an encrypted `.vaultenc` file is created.
   - Plaintext export is located under File → Export → Advanced and requires typing `YES`. Optionally auto-deletes after 10 minutes (best effort).
+
+---
+
+## ✅ Verify Downloads
+
+Until code-signing is available, verify your binaries after download.
+
+- Windows PowerShell:
+
+  ```powershell
+  Get-FileHash .\dist\PasswordSafe.exe -Algorithm SHA256
+  ```
+
+- macOS/Linux:
+
+  ```bash
+  shasum -a 256 dist/PasswordSafe.exe   # or: sha256sum dist/PasswordSafe.exe
+  ```
+
+Compare the output to the SHA256 published on the GitHub Release page.
+Optionally, check the VirusTotal scan link provided in the release notes.
 
 ---
 

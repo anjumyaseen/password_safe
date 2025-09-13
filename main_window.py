@@ -10,6 +10,8 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import QTimer
+from PyQt5 import QtCore
+from __init__ import __version__
 from storage import VaultStorage
 from login_dialog import LoginDialog
 from dashboard import VaultDashboard
@@ -24,14 +26,23 @@ class MainWindow(QMainWindow):
     def __init__(self, storage: VaultStorage):
         super().__init__()
         self.storage = storage
-        self.setWindowTitle("Vault")
+        self.setWindowTitle("Password Safe")
         self.resize(1000, 620)
+        # App/window icon
+        try:
+            self.setWindowIcon(QIcon("icon-safe.png"))
+        except Exception:
+            pass
         self.settings = load_settings()
 
         self._build_ui()
         self._build_menu()
         # Ensure a status bar exists for non-blocking notifications
         self.statusBar()
+        try:
+            self._refresh_title_and_status()
+        except Exception:
+            pass
 
     def _build_ui(self):
         self.dashboard = VaultDashboard(self.storage)
@@ -40,6 +51,10 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
         self.setCentralWidget(self.dashboard)
+        try:
+            self.dashboard.entries_changed.connect(self._refresh_title_and_status)
+        except Exception:
+            pass
 
     def _build_menu(self):
         menubar = self.menuBar()
@@ -71,18 +86,50 @@ class MainWindow(QMainWindow):
         quit_action.triggered.connect(self.close)
         file_menu.addAction(quit_action)
 
-        help_menu = menubar.addMenu("&Help")
-        about_action = QAction("About", self)
-        about_action.triggered.connect(self._about)
-        help_menu.addAction(about_action)
-
         edit_menu = menubar.addMenu("&Edit")
         prefs_action = QAction("Preferences...", self)
         prefs_action.triggered.connect(self._preferences)
         edit_menu.addAction(prefs_action)
 
+        help_menu = menubar.addMenu("&Help")
+        about_action = QAction("About", self)
+        about_action.triggered.connect(self._about)
+        help_menu.addAction(about_action)
+
     def _about(self):
-        QMessageBox.information(self, "About", "Simple Vault\n\n- Master password for unlocking\n- Add/Edit/Delete entries\n- Password generator & strength meter\n- Clipboard copy buttons\n- JSON persistence")
+        vault_path = getattr(self.storage, 'path', '(unknown)')
+        base = os.path.basename(vault_path)
+        master = getattr(self.storage, '_data', {}).get('master') if hasattr(self.storage, '_data') else None
+        iterations = master.get('iterations', 200_000) if isinstance(master, dict) else 200_000
+        try:
+            import cryptography
+            crypto_ver = cryptography.__version__
+        except Exception:
+            crypto_ver = 'n/a'
+        pyqt_ver = getattr(QtCore, 'PYQT_VERSION_STR', 'n/a')
+        html = f"""
+        <h3>Password Safe <small>v{__version__}</small></h3>
+        <p><b>Vault:</b> {base}<br><span style='color:#666'>{vault_path}</span></p>
+        <p><b>Crypto:</b> AES-256-GCM<br>
+        <b>KDF:</b> PBKDF2-HMAC-SHA256 ({iterations} iterations)</p>
+        <p><b>Environment:</b> PyQt5 {pyqt_ver} | cryptography {crypto_ver}</p>
+        <p><b>Tips:</b> Use <i>Export Encrypted…</i> for backups. Plaintext export is under <i>Export → Advanced</i> with safeguards.</p>
+        <p><b>License:</b> MIT</p>
+        """
+        QMessageBox.about(self, "About", html)
+
+    def _refresh_title_and_status(self):
+        vault_path = getattr(self.storage, 'path', '')
+        base = os.path.basename(vault_path) if vault_path else 'Vault'
+        try:
+            entries = len(self.storage.list_entries())
+        except Exception:
+            entries = 0
+        self.setWindowTitle(f"Password Safe — {base} (Unlocked)")
+        try:
+            self.statusBar().showMessage(f"Vault: {base} | Entries: {entries}", 3000)
+        except Exception:
+            pass
 
     def _preferences(self):
         dlg = PreferencesDialog(getattr(self, 'settings', {}), self)
@@ -400,10 +447,6 @@ class PreferencesDialog(QDialog):
 
     def values(self) -> dict:
         return dict(self._values)
-
-    
-def _unused():
-    pass
 
 
 def main():
