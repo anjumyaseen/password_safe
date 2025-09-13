@@ -17,6 +17,34 @@ from PyQt5.QtWidgets import (
     QProgressBar, QMenu, QAction, QInputDialog, QCompleter,
     QApplication
 )
+from PyQt5.QtWidgets import QAbstractItemView
+
+class EntryTree(QTreeWidget):
+    def __init__(self, owner: 'VaultDashboard'):
+        super().__init__()
+        self.owner = owner
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+        self.setDropIndicatorShown(True)
+        self.setDragDropMode(QAbstractItemView.InternalMove)
+
+    def dropEvent(self, event):
+        try:
+            target = self.itemAt(event.pos())
+            # If dropping on an entry, use its parent folder
+            if target and target.data(0, Qt.UserRole) is not None:
+                target = target.parent()
+            dest_folder = self.owner._item_path(target) if target else "Other"
+            for it in self.selectedItems() or []:
+                eid = it.data(0, Qt.UserRole)
+                if eid:
+                    self.owner.storage.update_entry(eid, {"folder": dest_folder})
+        except Exception:
+            pass
+        super().dropEvent(event)
+        # Reload to reflect canonical structure
+        self.owner._load_entries()
+
 
 class VaultDashboard(QWidget):
     entries_changed = pyqtSignal()
@@ -48,7 +76,7 @@ class VaultDashboard(QWidget):
         self.search.setPlaceholderText("Search entries...")
         self.search.textChanged.connect(self._filter_tree)
 
-        self.entry_tree = QTreeWidget()
+        self.entry_tree = EntryTree(self)
         self.entry_tree.setHeaderHidden(True)
         self.entry_tree.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         self.entry_tree.itemSelectionChanged.connect(self._on_select_tree)
@@ -231,6 +259,7 @@ class VaultDashboard(QWidget):
         is_entry = item.data(0, Qt.UserRole) is not None
         if not is_entry:
             # Folder (any depth)
+            protected = (item.parent() is None and item.text(0) in ["Personal", "Work", "Finance", "Shopping", "Other"])
             add_folder_action = QAction("Create Subfolder", self)
             add_folder_action.triggered.connect(lambda: self._create_subfolder(item))
             menu.addAction(add_folder_action)
@@ -239,13 +268,14 @@ class VaultDashboard(QWidget):
             new_entry_action.triggered.connect(lambda: self._new_entry_in_folder(item))
             menu.addAction(new_entry_action)
 
-            rename_action = QAction("Rename Folder", self)
-            rename_action.triggered.connect(lambda: self._rename_folder(item))
-            menu.addAction(rename_action)
+            if not protected:
+                rename_action = QAction("Rename Folder", self)
+                rename_action.triggered.connect(lambda: self._rename_folder(item))
+                menu.addAction(rename_action)
 
-            delete_action = QAction("Delete Folder", self)
-            delete_action.triggered.connect(lambda: self._delete_folder(item))
-            menu.addAction(delete_action)
+                delete_action = QAction("Delete Folder", self)
+                delete_action.triggered.connect(lambda: self._delete_folder(item))
+                menu.addAction(delete_action)
         else:
             # Entry item
             copy_action = QAction("Copy Entry", self)
@@ -269,6 +299,10 @@ class VaultDashboard(QWidget):
             self.entry_tree.addTopLevelItem(folder)
             # Update suggestions
             self._ensure_folder_in_combo(name)
+            try:
+                self.storage.add_folder(name)
+            except Exception:
+                pass
 
     def _create_subfolder(self, parent_item):
         name, ok = QInputDialog.getText(self, "New Subfolder", "Subfolder name:")
@@ -278,6 +312,10 @@ class VaultDashboard(QWidget):
             parent_item.setExpanded(True)
             # Update suggestions with full path
             self._ensure_folder_in_combo(self._item_path(subfolder))
+            try:
+                self.storage.add_folder(self._item_path(subfolder))
+            except Exception:
+                pass
 
     def _new_entry_in_folder(self, folder_item):
         try:
@@ -287,22 +325,52 @@ class VaultDashboard(QWidget):
         self._clear_form()
 
     def _rename_folder(self, item):
+        old_path = self._item_path(item)
         new_name, ok = QInputDialog.getText(self, "Rename Folder", "New name:", text=item.text(0))
         if ok and new_name:
             item.setText(0, new_name)
             # Keep folder suggestions roughly in sync
             self._refresh_combo_from_tree()
+            # Compute new path
+            new_path = self._item_path(item)
+            try:
+                self.storage.rename_folder(old_path, new_path)
+            except Exception:
+                pass
 
     def _delete_folder(self, item):
-        if item.childCount() > 0:
+        # Prevent deleting default top-level folders
+        if item.parent() is None and item.text(0) in ["Personal", "Work", "Finance", "Shopping", "Other"]:
+            QMessageBox.information(self, "Not allowed", "Default folders cannot be deleted.")
+            return
+        # Determine folder path we are deleting (and its subtree)
+        folder_path = self._item_path(item)
+
+        # Find all entries under this folder path (including subfolders)
+        affected_ids = []
+        for e in self.storage.list_entries():
+            f = (e.get("folder") or "Other")
+            if f == folder_path or f.startswith(folder_path + "/"):
+                affected_ids.append(e.get("id"))
+
+        # Warn and confirm deletion of entries, no move
+        if affected_ids:
             reply = QMessageBox.question(
-                self, "Delete Folder", 
-                "Folder contains entries. Delete anyway?",
-                QMessageBox.Yes | QMessageBox.No
+                self,
+                "Delete Folder",
+                f"This will permanently delete {len(affected_ids)} entrie(s) contained in '{folder_path}'.\n\nProceed?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
             )
             if reply != QMessageBox.Yes:
                 return
-        # Remove folder correctly whether it's top-level or a subfolder
+            for eid in affected_ids:
+                try:
+                    self.storage.delete_entry(eid)
+                except Exception:
+                    pass
+
+        # Remove the folder node from the tree
         parent = item.parent()
         if parent is None:
             idx = self.entry_tree.indexOfTopLevelItem(item)
@@ -310,6 +378,9 @@ class VaultDashboard(QWidget):
                 self.entry_tree.takeTopLevelItem(idx)
         else:
             parent.removeChild(item)
+
+        # Refresh view
+        self._load_entries()
         self._refresh_combo_from_tree()
 
     def _copy_entry(self, item):
@@ -345,6 +416,13 @@ class VaultDashboard(QWidget):
         defaults = ["Personal", "Work", "Finance", "Shopping", "Other"]
         for d in defaults:
             self._get_or_create_folder_item(d)
+
+        # Also ensure any custom folders (even empty) are shown
+        try:
+            for path in self.storage.list_folders():
+                self._get_or_create_folder_item(path)
+        except Exception:
+            pass
 
         # Load entries into possibly nested folder paths
         for e in self.storage.list_entries():

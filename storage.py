@@ -19,10 +19,11 @@ class VaultStorage:
         self._key = None   # derived encryption key (bytes) after unlock
         self._entries = [] # decrypted entries kept in-memory during a session
         self._encrypted_blob = None  # cached encrypted payload before unlock
+        self._folders = []  # custom folders (persisted), can be empty
         self._load()
 
     def _default_data(self):
-        return {"version": 1, "master": None, "entries": []}
+        return {"version": 1, "master": None, "entries": [], "folders": []}
 
     def _load(self):
         if not os.path.exists(self.path):
@@ -41,12 +42,15 @@ class VaultStorage:
             else:
                 # Plaintext (v1) format
                 self._data.setdefault("entries", [])
+                self._data.setdefault("folders", [])
                 self._entries = list(self._data.get("entries", []))
+                self._folders = list(self._data.get("folders", []))
                 self._encrypted_blob = None
         except Exception:
             self._data = self._default_data()
             self._encrypted_blob = None
             self._entries = []
+            self._folders = []
 
     def save(self):
         directory = os.path.dirname(self.path)
@@ -57,7 +61,7 @@ class VaultStorage:
         if self._key is not None and AESGCM is not None:
             self._data["version"] = 2
             # Encrypt entries list
-            blob = self._encrypt_entries(self._entries)
+            blob = self._encrypt_payload()
             self._data["vault"] = blob
             # Remove plaintext entries if present
             if "entries" in self._data:
@@ -65,10 +69,16 @@ class VaultStorage:
                     del self._data["entries"]
                 except Exception:
                     pass
+            if "folders" in self._data:
+                try:
+                    del self._data["folders"]
+                except Exception:
+                    pass
         else:
             # Keep plaintext only for uninitialized vaults (no master yet)
             self._data.setdefault("version", 1)
             self._data["entries"] = list(self._entries)
+            self._data["folders"] = list(self._folders)
 
         tmp = self.path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
@@ -108,16 +118,20 @@ class VaultStorage:
         # If encrypted blob exists, decrypt entries now
         if self._data.get("vault"):
             try:
-                self._entries = self._decrypt_entries()
+                entries, folders = self._decrypt_payload()
+                self._entries = entries
+                self._folders = folders
             except Exception:
                 # Decryption failure should be treated as invalid password
                 self._key = None
                 self._entries = []
+                self._folders = []
                 return False
         else:
             # v1 plaintext: entries were loaded in _load(); migrate on first unlock
             # Ensure entries field exists
             self._entries = list(self._data.get("entries", []))
+            self._folders = list(self._data.get("folders", []))
             self.save()
         return True
 
@@ -161,6 +175,9 @@ class VaultStorage:
     def list_entries(self):
         return list(self._entries)
 
+    def list_folders(self):
+        return list(self._folders)
+
     def add_entry(self, entry):
         entry = dict(entry)
         entry["id"] = str(uuid.uuid4())
@@ -202,10 +219,11 @@ class VaultStorage:
             raise RuntimeError("Vault is locked; no key available")
         return AESGCM(self._key)
 
-    def _encrypt_entries(self, entries):
-        # Serialize and encrypt entries using AES-GCM
+    def _encrypt_payload(self):
+        # Serialize and encrypt entries + folders using AES-GCM
         aad = b"password_safe:v1"
-        plaintext = json.dumps(list(entries)).encode("utf-8")
+        payload = {"entries": list(self._entries), "folders": list(self._folders)}
+        plaintext = json.dumps(payload).encode("utf-8")
         nonce = os.urandom(12)
         aesgcm = self._aesgcm()
         ct = aesgcm.encrypt(nonce, plaintext, aad)
@@ -214,13 +232,56 @@ class VaultStorage:
             "ciphertext": base64.b64encode(ct).decode("ascii"),
         }
 
-    def _decrypt_entries(self):
+    def _decrypt_payload(self):
         vault = self._data.get("vault")
         if not vault:
-            return list(self._data.get("entries", []))
+            return list(self._data.get("entries", [])), list(self._data.get("folders", []))
         nonce = base64.b64decode(vault["nonce"])
         ct = base64.b64decode(vault["ciphertext"])
         aad = b"password_safe:v1"
         aesgcm = self._aesgcm()
         pt = aesgcm.decrypt(nonce, ct, aad)
-        return json.loads(pt.decode("utf-8"))
+        obj = json.loads(pt.decode("utf-8"))
+        if isinstance(obj, list):
+            # Backward-compat: original format stored list of entries only
+            return obj, []
+        return list(obj.get("entries", [])), list(obj.get("folders", []))
+
+    # --- Folder helpers ---
+    def add_folder(self, path: str):
+        if not path:
+            return
+        if path not in self._folders and path not in ["Personal", "Work", "Finance", "Shopping", "Other"]:
+            self._folders.append(path)
+            self.save()
+
+    def remove_folder(self, prefix: str):
+        if not prefix:
+            return
+        # Remove the folder and any of its subpaths
+        keep = [f for f in self._folders if not (f == prefix or f.startswith(prefix + "/"))]
+        if len(keep) != len(self._folders):
+            self._folders = keep
+            self.save()
+
+    def rename_folder(self, old: str, new: str):
+        if not old or not new or old == new:
+            return
+        # Update folder list
+        updated = []
+        for f in self._folders:
+            if f == old or f.startswith(old + "/"):
+                updated.append(new + f[len(old):])
+            else:
+                updated.append(f)
+        self._folders = []
+        # normalize unique
+        for f in updated:
+            if f not in self._folders:
+                self._folders.append(f)
+        # Update entries
+        for e in self._entries:
+            f = e.get("folder") or "Other"
+            if f == old or f.startswith(old + "/"):
+                e["folder"] = new + f[len(old):]
+        self.save()
