@@ -14,7 +14,8 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QLineEdit, QTextEdit, QPushButton, QTreeWidget, QTreeWidgetItem,
     QComboBox, QMessageBox, QSplitter, QCheckBox, QToolButton, 
-    QProgressBar, QMenu, QAction, QInputDialog, QCompleter
+    QProgressBar, QMenu, QAction, QInputDialog, QCompleter,
+    QApplication
 )
 
 class VaultDashboard(QWidget):
