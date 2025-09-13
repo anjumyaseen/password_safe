@@ -4,7 +4,7 @@ import uuid
 import base64
 import hashlib
 import hmac
-from datetime import datetime
+from datetime import datetime, timezone
 
 try:
     # AES-GCM for authenticated encryption at rest
@@ -128,8 +128,8 @@ class VaultStorage:
         entry = dict(entry)
         entry["id"] = str(uuid.uuid4())
         now = datetime.utcnow().isoformat() + "Z"
-        entry["created_at"] = now
-        entry["updated_at"] = now
+        entry["created_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        entry["updated_at"] = entry["created_at"]
         entry.setdefault("history", [])
         self._entries.append(entry)
         self.save()
@@ -145,7 +145,7 @@ class VaultStorage:
                 for k, v in updated_fields.items():
                     if k not in ["id", "created_at"]:
                         e[k] = v
-                e["updated_at"] = datetime.utcnow().isoformat() + "Z"
+                e["updated_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
                 self.save()
                 return e
         return None

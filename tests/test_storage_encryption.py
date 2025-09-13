@@ -4,7 +4,7 @@ import base64
 import hashlib
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timezone
 
 import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -81,8 +81,8 @@ class TestVaultEncryption(unittest.TestCase):
                         "notes": "legacy note",
                         "tags": ["legacy"],
                         "folder": "Other",
-                        "created_at": datetime.utcnow().isoformat() + "Z",
-                        "updated_at": datetime.utcnow().isoformat() + "Z",
+                        "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                        "updated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
                         "history": [],
                     }
                 ],
@@ -107,4 +107,3 @@ class TestVaultEncryption(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
