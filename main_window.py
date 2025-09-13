@@ -143,17 +143,17 @@ class MainWindow(QMainWindow):
         view_menu = menubar.addMenu("&View")
         expand_action = QAction("Expand All Folders", self)
         expand_action.setShortcut("Ctrl+Shift+E")
-        expand_action.triggered.connect(lambda: self._current_dashboard() and self._current_dashboard().expand_all())
+        expand_action.triggered.connect(lambda: self._invoke_on_dashboard('expand_all'))
         view_menu.addAction(expand_action)
 
         collapse_action = QAction("Collapse All Folders", self)
         collapse_action.setShortcut("Ctrl+Shift+C")
-        collapse_action.triggered.connect(lambda: self._current_dashboard() and self._current_dashboard().collapse_all())
+        collapse_action.triggered.connect(lambda: self._invoke_on_dashboard('collapse_all'))
         view_menu.addAction(collapse_action)
 
         focus_search_action = QAction("Focus Search", self)
         focus_search_action.setShortcut("Ctrl+F")
-        focus_search_action.triggered.connect(lambda: self._current_dashboard() and self._current_dashboard().focus_search())
+        focus_search_action.triggered.connect(lambda: self._invoke_on_dashboard('focus_search'))
         view_menu.addAction(focus_search_action)
 
         help_menu = menubar.addMenu("&Help")
@@ -420,6 +420,11 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
         self._refresh_title_and_status()
+        # Disable menus while locked
+        try:
+            self.menuBar().setEnabled(False)
+        except Exception:
+            pass
 
     def _unlock_current(self):
         idx = self.tabs.currentIndex()
@@ -452,6 +457,11 @@ class MainWindow(QMainWindow):
         # Clear locked flag if no LockedView remains
         self.locked = any(isinstance(self.tabs.widget(i), LockedView) for i in range(self.tabs.count()))
         self._refresh_title_and_status()
+        if not self.locked:
+            try:
+                self.menuBar().setEnabled(True)
+            except Exception:
+                pass
 
     def _import_encrypted(self):
         if AESGCM is None:
@@ -656,6 +666,15 @@ class PreferencesDialog(QDialog):
     def values(self) -> dict:
         return dict(self._values)
 
+    # Helper to safely call methods on the current dashboard
+def _mw_invoke_on_dashboard(self, name: str):
+    w = self._current_dashboard()
+    if w and hasattr(w, name):
+        try:
+            getattr(w, name)()
+        except Exception:
+            pass
+
     # --- Tabs / multi-vault helpers ---
     
     
@@ -779,6 +798,7 @@ MainWindow._current_storage = _mw_current_storage
 MainWindow._close_tab_index = _mw_close_tab_index
 MainWindow._new_vault = _mw_new_vault
 MainWindow._open_vault = _mw_open_vault
+MainWindow._invoke_on_dashboard = _mw_invoke_on_dashboard
 
 
 def main():
