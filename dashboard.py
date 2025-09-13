@@ -219,36 +219,47 @@ class VaultDashboard(QWidget):
     def _show_tree_context_menu(self, position):
         menu = QMenu()
         item = self.entry_tree.itemAt(position)
-        
-        # For folder items
-        if item and not item.parent():
+
+        if item is None:
+            # Empty space: only New Folder
+            new_folder_action = QAction("New Folder", self)
+            new_folder_action.triggered.connect(self._create_top_level_folder)
+            menu.addAction(new_folder_action)
+            menu.exec_(self.entry_tree.viewport().mapToGlobal(position))
+            return
+
+        is_entry = item.data(0, Qt.UserRole) is not None
+        if not is_entry:
+            # Folder (any depth)
             add_folder_action = QAction("Create Subfolder", self)
             add_folder_action.triggered.connect(lambda: self._create_subfolder(item))
             menu.addAction(add_folder_action)
-            
+
+            new_entry_action = QAction("New Entry Here", self)
+            new_entry_action.triggered.connect(lambda: self._new_entry_in_folder(item))
+            menu.addAction(new_entry_action)
+
             rename_action = QAction("Rename Folder", self)
             rename_action.triggered.connect(lambda: self._rename_folder(item))
             menu.addAction(rename_action)
-            
+
             delete_action = QAction("Delete Folder", self)
             delete_action.triggered.connect(lambda: self._delete_folder(item))
             menu.addAction(delete_action)
-            
-        # For entry items (child items)
-        elif item and item.parent():
+        else:
+            # Entry item
             copy_action = QAction("Copy Entry", self)
             copy_action.triggered.connect(lambda: self._copy_entry(item))
             menu.addAction(copy_action)
-            
+
             move_action = QAction("Move Entry", self)
             move_action.triggered.connect(lambda: self._move_entry(item))
             menu.addAction(move_action)
-            
-        # Always available actions
-        new_folder_action = QAction("New Folder", self)
-        new_folder_action.triggered.connect(self._create_top_level_folder)
-        menu.addAction(new_folder_action)
-        
+
+            del_action = QAction("Delete Entry", self)
+            del_action.triggered.connect(lambda: self._delete_entry_item(item))
+            menu.addAction(del_action)
+
         menu.exec_(self.entry_tree.viewport().mapToGlobal(position))
 
     def _create_top_level_folder(self):
@@ -267,6 +278,13 @@ class VaultDashboard(QWidget):
             parent_item.setExpanded(True)
             # Update suggestions with full path
             self._ensure_folder_in_combo(self._item_path(subfolder))
+
+    def _new_entry_in_folder(self, folder_item):
+        try:
+            self.folderField.setCurrentText(self._item_path(folder_item))
+        except Exception:
+            pass
+        self._clear_form()
 
     def _rename_folder(self, item):
         new_name, ok = QInputDialog.getText(self, "Rename Folder", "New name:", text=item.text(0))
@@ -466,6 +484,32 @@ class VaultDashboard(QWidget):
             else:
                 QMessageBox.warning(self, "Not found", "Could not delete the selected entry.")
 
+    def _delete_entry_item(self, item):
+        # Delete the specific tree item (used from context menu)
+        try:
+            if item is None or item.parent() is None:
+                return
+            entry_id = item.data(0, Qt.UserRole)
+            if not entry_id:
+                return
+            reply = QMessageBox.question(
+                self, "Delete entry", "Are you sure you want to delete this entry?",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+            )
+            if reply != QMessageBox.Yes:
+                return
+            if self.storage.delete_entry(entry_id):
+                parent = item.parent()
+                parent.removeChild(item)
+                self._clear_form()
+                QMessageBox.information(self, "Deleted", "Entry removed.")
+                try:
+                    self.entries_changed.emit()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
     def _get_form_entry(self):
         name = self.nameField.text().strip()
         password = self.passwordField.text()
@@ -543,6 +587,10 @@ class VaultDashboard(QWidget):
             self._load_entries()
             self.current_id = created["id"]
             QMessageBox.information(self, "Success", f"Entry '{entry['name']}' added.")
+            try:
+                self.entries_changed.emit()
+            except Exception:
+                pass
             try:
                 self.entries_changed.emit()
             except Exception:
