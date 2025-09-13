@@ -127,7 +127,6 @@ class VaultStorage:
     def add_entry(self, entry):
         entry = dict(entry)
         entry["id"] = str(uuid.uuid4())
-        now = datetime.utcnow().isoformat() + "Z"
         entry["created_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         entry["updated_at"] = entry["created_at"]
         entry.setdefault("history", [])
