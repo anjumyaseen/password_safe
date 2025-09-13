@@ -302,10 +302,14 @@ class VaultDashboard(QWidget):
             )
             if reply != QMessageBox.Yes:
                 return
-        
-        (item.parent() or self.entry_tree).takeTopLevelItem(
-            (item.parent() or self.entry_tree).indexOfTopLevelItem(item)
-        )
+        # Remove folder correctly whether it's top-level or a subfolder
+        parent = item.parent()
+        if parent is None:
+            idx = self.entry_tree.indexOfTopLevelItem(item)
+            if idx >= 0:
+                self.entry_tree.takeTopLevelItem(idx)
+        else:
+            parent.removeChild(item)
         self._refresh_combo_from_tree()
 
     def _copy_entry(self, item):
