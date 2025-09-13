@@ -53,8 +53,8 @@ class MainWindow(QMainWindow):
         self.locked = False
         self._last_activity_ms = 0
         self._idle_timer = QTimer(self)
-        self._idle_timer.setInterval(5_000)
-        self._idle_timer.timeout.connect(self._check_idle_lock)
+        self._idle_timer.setSingleShot(True)
+        self._idle_timer.timeout.connect(self._lock_all)
 
         self._build_ui()
         self._build_menu()
@@ -65,8 +65,14 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
         # Idle lock handling
-        self._reset_activity_timer()
-        self._idle_timer.start()
+        self._reset_idle_timer()
+        # Track activity from the whole app, not just the main window
+        try:
+            app = QApplication.instance()
+            if app:
+                app.installEventFilter(self)
+        except Exception:
+            pass
         self.installEventFilter(self)
 
     def _build_ui(self):
@@ -241,6 +247,8 @@ class MainWindow(QMainWindow):
                         w.apply_settings(self.settings)
             except Exception:
                 pass
+            # Restart idle timer with new settings
+            self._reset_idle_timer()
 
     def _export_json(self):
         # Strong warning and typed confirmation
@@ -368,35 +376,50 @@ class MainWindow(QMainWindow):
 
     # --- Lock/Unlock & Idle handling ---
     def eventFilter(self, obj, event):
-        et = getattr(event, 'type', lambda: None)()
-        if et in (2, 5, 6, 50, 51):  # mouse/keyboard events
-            self._reset_activity_timer()
-        return super().eventFilter(obj, event)
-
-    def _reset_activity_timer(self):
         try:
-            self._last_activity_ms = int(QtCore.QDateTime.currentMSecsSinceEpoch())
-        except Exception:
-            self._last_activity_ms = 0
-
-    def _check_idle_lock(self):
-        try:
-            if not self.settings.get('auto_lock_enabled', True):
-                return
-            # Support seconds (new) and legacy minutes
-            seconds = 0
-            if 'auto_lock_seconds' in self.settings:
-                seconds = int(self.settings.get('auto_lock_seconds', 60) or 60)
-            else:
-                minutes = int(self.settings.get('auto_lock_minutes', 5) or 5)
-                seconds = max(0, minutes) * 60
-            if seconds <= 0:
-                return
-            now_ms = int(QtCore.QDateTime.currentMSecsSinceEpoch())
-            if self._last_activity_ms and (now_ms - self._last_activity_ms) >= seconds * 1000:
-                self._lock_all()
+            et = event.type()
+            # Reset timer on common user interactions
+            interested = {
+                QtCore.QEvent.MouseMove,
+                QtCore.QEvent.MouseButtonPress,
+                QtCore.QEvent.MouseButtonRelease,
+                QtCore.QEvent.KeyPress,
+                QtCore.QEvent.KeyRelease,
+                QtCore.QEvent.Wheel,
+                QtCore.QEvent.TouchBegin,
+                QtCore.QEvent.TouchUpdate,
+                QtCore.QEvent.TouchEnd,
+                QtCore.QEvent.HoverMove,
+                QtCore.QEvent.FocusIn,
+                QtCore.QEvent.InputMethod,
+            }
+            if et in interested:
+                self._reset_idle_timer()
         except Exception:
             pass
+        return super().eventFilter(obj, event)
+
+    def _reset_idle_timer(self):
+        try:
+            if not self.settings.get('auto_lock_enabled', True):
+                self._idle_timer.stop()
+                return
+            # seconds setting (fallback to legacy minutes)
+            if 'auto_lock_seconds' in self.settings:
+                secs = int(self.settings.get('auto_lock_seconds', 60) or 60)
+            else:
+                mins = int(self.settings.get('auto_lock_minutes', 5) or 5)
+                secs = max(0, mins) * 60
+            if secs <= 0:
+                self._idle_timer.stop()
+                return
+            self._idle_timer.start(secs * 1000)
+        except Exception:
+            pass
+
+    # _check_idle_lock no longer needed with single-shot timer; keep shim for safety
+    def _check_idle_lock(self):
+        self._lock_all()
 
     def _lock_all(self):
         if self.locked:
@@ -453,7 +476,7 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
         # Reset idle timer upon successful unlock
-        self._reset_activity_timer()
+        self._reset_idle_timer()
         # Clear locked flag if no LockedView remains
         self.locked = any(isinstance(self.tabs.widget(i), LockedView) for i in range(self.tabs.count()))
         self._refresh_title_and_status()
