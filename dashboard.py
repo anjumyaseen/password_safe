@@ -25,6 +25,7 @@ class VaultDashboard(QWidget):
         self.current_id = None
         self.gen_length = 16
         self.clipboard_ttl_ms = 30_000  # auto-clear clipboard TTL
+        self.require_show_to_copy = False
         # Clipboard countdown state
         self._clip_timer = None
         self._clip_expected = None
@@ -468,6 +469,10 @@ class VaultDashboard(QWidget):
         if not text:
             self._notify(f"No {label.lower()} to copy.")
             return
+        # Respect preference: require 'Show' for password copies
+        if label == "Password" and self.require_show_to_copy and self.passwordField.echoMode() != QLineEdit.Normal:
+            self._notify("Password is hidden. Click 'Show' first or disable the setting in Preferences.")
+            return
         cb = QApplication.clipboard()
         cb.setText(text)
         # Setup countdown
@@ -537,6 +542,17 @@ class VaultDashboard(QWidget):
             self._clip_timer.deleteLater()
             self._clip_timer = None
         self._clear_clipboard_if_unchanged(self._clip_expected or "")
+
+    def apply_settings(self, settings: dict):
+        try:
+            sec = int(settings.get("clipboard_ttl_sec", 30) or 30)
+            self.clipboard_ttl_ms = max(1, sec) * 1000
+        except Exception:
+            pass
+        try:
+            self.require_show_to_copy = bool(settings.get("require_show_to_copy", False))
+        except Exception:
+            pass
 
     def _open_url(self):
         url = self.urlField.text().strip()

@@ -13,6 +13,7 @@ from PyQt5.QtCore import QTimer
 from storage import VaultStorage
 from login_dialog import LoginDialog
 from dashboard import VaultDashboard
+from settings import load_settings, save_settings
 
 try:
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -25,6 +26,7 @@ class MainWindow(QMainWindow):
         self.storage = storage
         self.setWindowTitle("Vault")
         self.resize(1000, 620)
+        self.settings = load_settings()
 
         self._build_ui()
         self._build_menu()
@@ -33,6 +35,10 @@ class MainWindow(QMainWindow):
 
     def _build_ui(self):
         self.dashboard = VaultDashboard(self.storage)
+        try:
+            self.dashboard.apply_settings(self.settings)
+        except Exception:
+            pass
         self.setCentralWidget(self.dashboard)
 
     def _build_menu(self):
@@ -70,8 +76,23 @@ class MainWindow(QMainWindow):
         about_action.triggered.connect(self._about)
         help_menu.addAction(about_action)
 
+        edit_menu = menubar.addMenu("&Edit")
+        prefs_action = QAction("Preferences...", self)
+        prefs_action.triggered.connect(self._preferences)
+        edit_menu.addAction(prefs_action)
+
     def _about(self):
         QMessageBox.information(self, "About", "Simple Vault\n\n- Master password for unlocking\n- Add/Edit/Delete entries\n- Password generator & strength meter\n- Clipboard copy buttons\n- JSON persistence")
+
+    def _preferences(self):
+        dlg = PreferencesDialog(getattr(self, 'settings', {}), self)
+        if dlg.exec_() == QDialog.Accepted:
+            self.settings = dlg.values()
+            save_settings(self.settings)
+            try:
+                self.dashboard.apply_settings(self.settings)
+            except Exception:
+                pass
 
     def _export_json(self):
         # Strong warning and typed confirmation
@@ -102,7 +123,7 @@ class MainWindow(QMainWindow):
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
             # Optional safeguard: offer auto-delete after X minutes
-            minutes = 10
+            minutes = int(getattr(self, 'settings', {}).get("plaintext_export_autodelete_min", 10) or 10)
             box = QMessageBox(self)
             box.setIcon(QMessageBox.Warning)
             box.setWindowTitle("Plaintext Export Created")
@@ -326,6 +347,63 @@ class ChangeMasterDialog(QDialog):
 
     def values(self):
         return self.current.text(), self.new.text()
+
+
+class PreferencesDialog(QDialog):
+    def __init__(self, values: dict, parent=None):
+        super().__init__(parent)
+        self._values = dict(values or {})
+        self.setWindowTitle("Preferences")
+        self.setModal(True)
+        self.setMinimumWidth(380)
+        self._build_ui()
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+
+        from PyQt5.QtWidgets import QSpinBox
+        self.clip_ttl = QSpinBox()
+        self.clip_ttl.setRange(10, 120)
+        self.clip_ttl.setSuffix(" s")
+        self.clip_ttl.setValue(int(self._values.get("clipboard_ttl_sec", 30) or 30))
+
+        self.require_show = QCheckBox("Require 'Show' before copying password")
+        self.require_show.setChecked(bool(self._values.get("require_show_to_copy", False)))
+
+        self.plain_autodel = QSpinBox()
+        self.plain_autodel.setRange(1, 120)
+        self.plain_autodel.setSuffix(" min")
+        self.plain_autodel.setValue(int(self._values.get("plaintext_export_autodelete_min", 10) or 10))
+
+        form.addRow("Clipboard auto-clear:", self.clip_ttl)
+        form.addRow("Password copy safety:", self.require_show)
+        form.addRow("Plaintext export auto-delete:", self.plain_autodel)
+
+        btns = QHBoxLayout()
+        ok = QPushButton("Save")
+        cancel = QPushButton("Cancel")
+        ok.clicked.connect(self._on_accept)
+        cancel.clicked.connect(self.reject)
+        btns.addWidget(ok)
+        btns.addWidget(cancel)
+        btns.addStretch()
+
+        layout.addLayout(form)
+        layout.addLayout(btns)
+
+    def _on_accept(self):
+        self._values["clipboard_ttl_sec"] = int(self.clip_ttl.value())
+        self._values["require_show_to_copy"] = bool(self.require_show.isChecked())
+        self._values["plaintext_export_autodelete_min"] = int(self.plain_autodel.value())
+        self.accept()
+
+    def values(self) -> dict:
+        return dict(self._values)
+
+    
+def _unused():
+    pass
 
 
 def main():

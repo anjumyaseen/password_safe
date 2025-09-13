@@ -111,3 +111,21 @@ MIT License – feel free to use and modify.
 - Export: The Export to JSON feature writes unencrypted data for portability. Treat exported files as sensitive and remove them when no longer needed.
   - Recommended: Use "Export Encrypted…" (default) for sharing or backup. A passphrase is required and an encrypted `.vaultenc` file is created.
   - Plaintext export is located under File → Export → Advanced and requires typing `YES`. Optionally auto-deletes after 10 minutes (best effort).
+
+---
+
+## ⚙️ Preferences
+
+Open via Edit → Preferences…
+
+- Clipboard auto-clear: Number of seconds before the clipboard is cleared after a Copy (default 30s). A live countdown appears in the main window status bar at the bottom (e.g., “Password copied. Clears in 29s”). The app clears the clipboard only if it still contains the same copied value, so it won’t erase newer clipboard content.
+- Require “Show” before copying password: Optional UX guardrail. When enabled, the password must be visible (Show checked) before it can be copied. This reduces accidental copies but can increase shoulder‑surfing risk; leave off unless you value the extra step. Default: off.
+- Plaintext export auto-delete (minutes): Best‑effort timer to delete a plaintext export created via Advanced → Export Plaintext. Works only while the app remains open and is not a secure wipe (no disk overwrite).
+
+---
+
+## ⬆️ Export / ⬇️ Import
+
+- Export Encrypted…: File → Export → Export Encrypted… (recommended). Prompts for a passphrase, produces a `.vaultenc` file using AES‑GCM with PBKDF2‑SHA256 (200k iterations).
+- Import Encrypted…: File → Import Encrypted… Select a `.vaultenc`, enter the passphrase, and the entries are imported with new IDs.
+- Export Plaintext (Not Recommended): File → Export → Advanced → Export Plaintext… Requires typing `YES` in a confirmation dialog. Optionally schedule auto‑delete (see Preferences). Treat the resulting `.json` as highly sensitive.
