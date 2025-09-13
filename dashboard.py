@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from storage import VaultStorage
 
-from PyQt5.QtCore import Qt, QUrl, QStringListModel, QTimer
+from PyQt5.QtCore import Qt, QUrl, QStringListModel, QTimer, pyqtSignal
 from PyQt5.QtGui import QDesktopServices
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
@@ -19,6 +19,7 @@ from PyQt5.QtWidgets import (
 )
 
 class VaultDashboard(QWidget):
+    entries_changed = pyqtSignal()
     def __init__(self, storage: 'VaultStorage'):
         super().__init__()
         self.storage = storage
@@ -176,9 +177,9 @@ class VaultDashboard(QWidget):
         form.addRow("Tags", self.tagsField)
 
         btn_row = QHBoxLayout()
-        self.save_btn = QPushButton("Save Entry")
+        self.save_btn = QPushButton("Save")
         self.save_btn.clicked.connect(self._save_entry)
-        self.clear_btn = QPushButton("Clear Form")
+        self.clear_btn = QPushButton("Reset")
         self.clear_btn.clicked.connect(self._clear_form)
         btn_row.addWidget(self.save_btn)
         btn_row.addWidget(self.clear_btn)
@@ -194,6 +195,26 @@ class VaultDashboard(QWidget):
 
         layout = QVBoxLayout(self)
         layout.addWidget(splitter)
+
+    # --- View helpers for menu actions ---
+    def expand_all(self):
+        try:
+            self.entry_tree.expandAll()
+        except Exception:
+            pass
+
+    def collapse_all(self):
+        try:
+            self.entry_tree.collapseAll()
+        except Exception:
+            pass
+
+    def focus_search(self):
+        try:
+            self.search.setFocus()
+            self.search.selectAll()
+        except Exception:
+            pass
 
     def _show_tree_context_menu(self, position):
         menu = QMenu()
@@ -314,19 +335,69 @@ class VaultDashboard(QWidget):
         self.delete_btn.setEnabled(False)
         # Refresh folder suggestions with current folders
         self._refresh_combo_from_tree()
+        try:
+            self.entries_changed.emit()
+        except Exception:
+            pass
 
     def _filter_tree(self, term):
         term = (term or "").strip().lower()
+        self._first_search_match = None
+
+        def entry_matches(item):
+            if not term:
+                return True
+            # Name match
+            if term in (item.text(0) or "").lower():
+                return True
+            # Field match
+            try:
+                entry_id = item.data(0, Qt.UserRole)
+                if not entry_id:
+                    return False
+                e = next((x for x in self.storage.list_entries() if x["id"] == entry_id), None)
+                if not e:
+                    return False
+                haystack = " ".join([
+                    (e.get("name", "") or ""),
+                    (e.get("username", "") or ""),
+                    (e.get("email", "") or ""),
+                    (e.get("url", "") or ""),
+                    " ".join(e.get("tags", []) or []),
+                ]).lower()
+                return term in haystack
+            except Exception:
+                return False
+
+        def walk(item):
+            # Determine if this is an entry (has id) or a folder
+            is_entry = item.data(0, Qt.UserRole) is not None
+            if is_entry:
+                visible = entry_matches(item)
+                item.setHidden(not visible)
+                if visible and self._first_search_match is None:
+                    self._first_search_match = item
+                return visible
+            # Folder: recurse into children
+            any_visible = False
+            for i in range(item.childCount()):
+                if walk(item.child(i)):
+                    any_visible = True
+            # When no term, keep folders visible; otherwise only those with visible descendants
+            item.setHidden(False if not term else not any_visible)
+            item.setExpanded(bool(term) and any_visible)
+            return any_visible or not term
+
         for i in range(self.entry_tree.topLevelItemCount()):
-            folder_item = self.entry_tree.topLevelItem(i)
-            visible_folder = False
-            for j in range(folder_item.childCount()):
-                entry_item = folder_item.child(j)
-                visible = term in entry_item.text(0).lower()
-                entry_item.setHidden(not visible)
-                if visible:
-                    visible_folder = True
-            folder_item.setHidden(not visible_folder)
+            walk(self.entry_tree.topLevelItem(i))
+
+        if self._first_search_match is not None:
+            self.entry_tree.setCurrentItem(self._first_search_match)
+            self._on_select_tree()
+        else:
+            # Clear selection if nothing matches
+            self.entry_tree.clearSelection()
+            self.delete_btn.setEnabled(False)
 
     def _on_select_tree(self):
         items = self.entry_tree.selectedItems()
@@ -388,6 +459,10 @@ class VaultDashboard(QWidget):
                 parent.removeChild(item)
                 self._clear_form()
                 QMessageBox.information(self, "Deleted", "Entry removed.")
+                try:
+                    self.entries_changed.emit()
+                except Exception:
+                    pass
             else:
                 QMessageBox.warning(self, "Not found", "Could not delete the selected entry.")
 
@@ -459,11 +534,19 @@ class VaultDashboard(QWidget):
                 self.storage.update_entry(self.current_id, updated)
                 self._load_entries()
                 QMessageBox.information(self, "Saved", "Entry updated.")
+                try:
+                    self.entries_changed.emit()
+                except Exception:
+                    pass
         else:
             created = self.storage.add_entry(entry)
             self._load_entries()
             self.current_id = created["id"]
             QMessageBox.information(self, "Success", f"Entry '{entry['name']}' added.")
+            try:
+                self.entries_changed.emit()
+            except Exception:
+                pass
 
     def _copy_text(self, text, label="Text"):
         if not text:

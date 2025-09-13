@@ -91,10 +91,29 @@ class MainWindow(QMainWindow):
         prefs_action.triggered.connect(self._preferences)
         edit_menu.addAction(prefs_action)
 
+        view_menu = menubar.addMenu("&View")
+        expand_action = QAction("Expand All Folders", self)
+        expand_action.setShortcut("Ctrl+Shift+E")
+        expand_action.triggered.connect(lambda: self.dashboard.expand_all())
+        view_menu.addAction(expand_action)
+
+        collapse_action = QAction("Collapse All Folders", self)
+        collapse_action.setShortcut("Ctrl+Shift+C")
+        collapse_action.triggered.connect(lambda: self.dashboard.collapse_all())
+        view_menu.addAction(collapse_action)
+
+        focus_search_action = QAction("Focus Search", self)
+        focus_search_action.setShortcut("Ctrl+F")
+        focus_search_action.triggered.connect(lambda: self.dashboard.focus_search())
+        view_menu.addAction(focus_search_action)
+
         help_menu = menubar.addMenu("&Help")
         about_action = QAction("About", self)
         about_action.triggered.connect(self._about)
         help_menu.addAction(about_action)
+        faq_action = QAction("FAQ", self)
+        faq_action.triggered.connect(self._faq)
+        help_menu.addAction(faq_action)
 
     def _about(self):
         vault_path = getattr(self.storage, 'path', '(unknown)')
@@ -117,6 +136,25 @@ class MainWindow(QMainWindow):
         <p><b>License:</b> MIT</p>
         """
         QMessageBox.about(self, "About", html)
+
+    def _faq(self):
+        vault_path = getattr(self.storage, 'path', '(unknown)')
+        html = f"""
+        <h3>Frequently Asked Questions</h3>
+        <p><b>Where is my vault stored?</b><br>
+        {vault_path}</p>
+        <p><b>Is the vault encrypted?</b><br>
+        Yes. Entries are encrypted at rest with AES‑GCM. The key is derived from your master password using PBKDF2‑SHA256 (200k iterations).</p>
+        <p><b>How do I back up or move my data?</b><br>
+        Use <i>File → Export → Export Encrypted…</i> to create a passphrase‑protected export. Restore via <i>File → Import Encrypted…</i>.</p>
+        <p><b>Can I export plaintext?</b><br>
+        It’s under <i>Export → Advanced</i> with strong warnings and an optional auto‑delete timer. Use only for migration.</p>
+        <p><b>Clipboard auto‑clear?</b><br>
+        Copies clear automatically after the configured TTL (Edit → Preferences). A countdown appears in the status bar.</p>
+        <p><b>Change master password?</b><br>
+        Use <i>File → Change Master Password…</i>. The vault is re‑encrypted with the new key.</p>
+        """
+        QMessageBox.about(self, "FAQ", html)
 
     def _refresh_title_and_status(self):
         vault_path = getattr(self.storage, 'path', '')
