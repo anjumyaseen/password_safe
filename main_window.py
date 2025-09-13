@@ -1,13 +1,22 @@
 import os
 import sys
 import json
+import base64
+import hashlib
+from datetime import datetime, timezone
 from PyQt5.QtWidgets import (
-    QMainWindow, QAction, QFileDialog, QMessageBox, QApplication, QDialog
+    QMainWindow, QAction, QFileDialog, QMessageBox, QApplication, QDialog, QInputDialog, QLineEdit, QCheckBox
 )
 from PyQt5.QtGui import QIcon
+from PyQt5.QtCore import QTimer
 from storage import VaultStorage
 from login_dialog import LoginDialog
 from dashboard import VaultDashboard
+
+try:
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+except Exception:
+    AESGCM = None
 
 class MainWindow(QMainWindow):
     def __init__(self, storage: VaultStorage):
@@ -29,9 +38,21 @@ class MainWindow(QMainWindow):
         menubar = self.menuBar()
         file_menu = menubar.addMenu("&File")
 
-        export_action = QAction("Export to JSON...", self)
-        export_action.triggered.connect(self._export_json)
-        file_menu.addAction(export_action)
+        # Export submenu
+        export_menu = file_menu.addMenu("Export")
+        export_enc_action = QAction("Export Encrypted...", self)
+        export_enc_action.triggered.connect(self._export_encrypted)
+        export_menu.addAction(export_enc_action)
+
+        advanced_menu = export_menu.addMenu("Advanced")
+        export_plain_action = QAction("Export Plaintext (Not Recommended)...", self)
+        export_plain_action.triggered.connect(self._export_json)
+        advanced_menu.addAction(export_plain_action)
+
+        # Import
+        import_enc_action = QAction("Import Encrypted...", self)
+        import_enc_action.triggered.connect(self._import_encrypted)
+        file_menu.addAction(import_enc_action)
 
         quit_action = QAction("Quit", self)
         quit_action.setShortcut("Ctrl+Q")
@@ -44,7 +65,24 @@ class MainWindow(QMainWindow):
         help_menu.addAction(about_action)
 
     def _export_json(self):
-        path, _ = QFileDialog.getSaveFileName(self, "Export vault as JSON", "", "JSON Files (*.json)")
+        # Strong warning and typed confirmation
+        QMessageBox.critical(
+            self,
+            "Dangerous: Plaintext Export",
+            "\u26a0\ufe0f This will create a file containing ALL your passwords in PLAIN TEXT.\n\n"
+            "Anyone who gets this file can read all your secrets. Use only for migration or special cases.",
+        )
+
+        text, ok = QInputDialog.getText(
+            self,
+            "Confirm Plaintext Export",
+            "Type YES to proceed:",
+            QLineEdit.Normal,
+        )
+        if not ok or (text or "").strip().upper() != "YES":
+            return
+
+        path, _ = QFileDialog.getSaveFileName(self, "Export vault as JSON (PLAINTEXT)", "", "JSON Files (*.json)")
         if not path:
             return
         data = {
@@ -54,9 +92,161 @@ class MainWindow(QMainWindow):
         try:
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
-            QMessageBox.information(self, "Exported", "Vault exported successfully.")
+            # Optional safeguard: offer auto-delete after X minutes
+            minutes = 10
+            box = QMessageBox(self)
+            box.setIcon(QMessageBox.Warning)
+            box.setWindowTitle("Plaintext Export Created")
+            box.setText(
+                f"Plaintext file saved to:\n{path}\n\nConsider deleting it soon."
+            )
+            cb = QCheckBox(f"Auto-delete after {minutes} minutes")
+            box.setCheckBox(cb)
+            box.addButton("OK", QMessageBox.AcceptRole)
+            box.exec_()
+            if cb.isChecked():
+                QTimer.singleShot(minutes * 60 * 1000, lambda: self._try_delete_file(path))
+            QMessageBox.information(self, "Exported", "Vault exported successfully (PLAINTEXT).")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to export: {e}")
+
+    def _export_encrypted(self):
+        if AESGCM is None:
+            QMessageBox.critical(self, "Missing dependency", "'cryptography' package is required for encrypted export.")
+            return
+
+        # Ask for passphrase twice
+        pw1, ok1 = QInputDialog.getText(self, "Export Encrypted", "Set passphrase:", QLineEdit.Password)
+        if not ok1:
+            return
+        pw2, ok2 = QInputDialog.getText(self, "Export Encrypted", "Confirm passphrase:", QLineEdit.Password)
+        if not ok2:
+            return
+        if not pw1 or pw1 != pw2:
+            QMessageBox.warning(self, "Mismatch", "Passphrases do not match or are empty.")
+            return
+        if len(pw1) < 8:
+            QMessageBox.warning(self, "Weak passphrase", "Use at least 8 characters.")
+            return
+
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Encrypted Vault",
+            "",
+            "Encrypted Vault (*.vaultenc);;All Files (*)",
+        )
+        if not path:
+            return
+
+        try:
+            plaintext = {
+                "version": 1,
+                "exported_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                "entries": self.storage.list_entries(),
+            }
+            pt = json.dumps(plaintext, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+            salt = os.urandom(16)
+            iterations = 200_000
+            key = hashlib.pbkdf2_hmac("sha256", pw1.encode("utf-8"), salt, iterations)
+            nonce = os.urandom(12)
+            aad = b"password_safe:export:v1"
+            aes = AESGCM(key)
+            ct = aes.encrypt(nonce, pt, aad)
+
+            doc = {
+                "format": "password_safe_export",
+                "version": 1,
+                "kdf": {
+                    "algo": "pbkdf2-sha256",
+                    "iterations": iterations,
+                    "salt": base64.b64encode(salt).decode("ascii"),
+                },
+                "cipher": "aes-256-gcm",
+                "nonce": base64.b64encode(nonce).decode("ascii"),
+                "ciphertext": base64.b64encode(ct).decode("ascii"),
+            }
+
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(doc, f, indent=2)
+            QMessageBox.information(self, "Exported", "Encrypted vault exported successfully.")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to export encrypted vault: {e}")
+
+    def _try_delete_file(self, path):
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+                # Notify via status bar if available
+                try:
+                    self.statusBar().showMessage("Plaintext export auto-deleted.", 3000)
+                except Exception:
+                    pass
+        except Exception:
+            # Best effort only; ignore failures
+            pass
+
+    def _import_encrypted(self):
+        if AESGCM is None:
+            QMessageBox.critical(self, "Missing dependency", "'cryptography' package is required for encrypted import.")
+            return
+
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Import Encrypted Vault",
+            "",
+            "Encrypted Vault (*.vaultenc);;All Files (*)",
+        )
+        if not path:
+            return
+
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                doc = json.load(f)
+            if not isinstance(doc, dict) or doc.get("cipher") != "aes-256-gcm":
+                QMessageBox.critical(self, "Invalid file", "Selected file does not look like a valid encrypted export.")
+                return
+
+            # Ask for passphrase
+            pw, ok = QInputDialog.getText(self, "Import Encrypted", "Enter passphrase:", QLineEdit.Password)
+            if not ok:
+                return
+            salt = base64.b64decode(doc["kdf"]["salt"])
+            iterations = int(doc["kdf"].get("iterations", 200_000))
+            key = hashlib.pbkdf2_hmac("sha256", pw.encode("utf-8"), salt, iterations)
+            nonce = base64.b64decode(doc["nonce"])
+            ct = base64.b64decode(doc["ciphertext"])
+            aad = b"password_safe:export:v1"
+            pt = AESGCM(key).decrypt(nonce, ct, aad)
+            payload = json.loads(pt.decode("utf-8"))
+            entries = payload.get("entries", [])
+
+            if not entries:
+                QMessageBox.information(self, "Nothing to import", "The encrypted export contains no entries.")
+                return
+
+            reply = QMessageBox.question(
+                self,
+                "Confirm Import",
+                f"Import {len(entries)} entries into this vault? New IDs will be assigned.",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if reply != QMessageBox.Yes:
+                return
+
+            imported = 0
+            for e in entries:
+                # Avoid id collisions; let storage assign a new ID and timestamps
+                e = dict(e)
+                e.pop("id", None)
+                e.pop("created_at", None)
+                e.pop("updated_at", None)
+                self.storage.add_entry(e)
+                imported += 1
+
+            QMessageBox.information(self, "Imported", f"Imported {imported} entries.")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to import encrypted vault: {e}")
 
     def _about(self):
         QMessageBox.information(self, "About", "Simple Vault\n\n- Master password for unlocking\n- Add/Edit/Delete entries\n- Password generator & strength meter\n- Clipboard copy buttons\n- JSON persistence")

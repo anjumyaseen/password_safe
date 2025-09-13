@@ -38,6 +38,7 @@ password_safe/
 * 📦 Encryption at rest (AES‑GCM via `cryptography`), vault stored at `~/.simple_vault/vault.json`
 * 🔁 Automatic migration of older plaintext vaults on first unlock
 * 🗂️ Custom folders and nested subfolders (use paths like `Entertainment/Netflix`)
+* ⬆️ Export Encrypted by default; plaintext export only under Advanced with strong warnings
 
 ---
 
@@ -108,3 +109,5 @@ MIT License – feel free to use and modify.
 - Encryption: Entries are encrypted at rest using AES‑GCM with a key derived from your master password (PBKDF2‑HMAC‑SHA256).
 - Migration: If a legacy plaintext vault is detected, it is encrypted automatically after the first successful unlock.
 - Export: The Export to JSON feature writes unencrypted data for portability. Treat exported files as sensitive and remove them when no longer needed.
+  - Recommended: Use "Export Encrypted…" (default) for sharing or backup. A passphrase is required and an encrypted `.vaultenc` file is created.
+  - Plaintext export is located under File → Export → Advanced and requires typing `YES`. Optionally auto-deletes after 10 minutes (best effort).
