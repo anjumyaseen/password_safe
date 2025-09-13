@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from storage import VaultStorage
 
-from PyQt5.QtCore import Qt, QUrl, QStringListModel
+from PyQt5.QtCore import Qt, QUrl, QStringListModel, QTimer
 from PyQt5.QtGui import QDesktopServices
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
@@ -23,6 +23,7 @@ class VaultDashboard(QWidget):
         self.storage = storage
         self.current_id = None
         self.gen_length = 16
+        self.clipboard_ttl_ms = 30_000  # auto-clear clipboard TTL
         self._build_ui()
         self._load_entries()
 
@@ -459,10 +460,23 @@ class VaultDashboard(QWidget):
 
     def _copy_text(self, text, label="Text"):
         if not text:
-            QMessageBox.information(self, "Copy", f"No {label.lower()} to copy.")
+            self._notify(f"No {label.lower()} to copy.")
             return
-        QApplication.clipboard().setText(text)
-        QMessageBox.information(self, "Copied", f"{label} copied to clipboard.")
+        cb = QApplication.clipboard()
+        cb.setText(text)
+        self._notify(f"{label} copied. Clipboard clears in 30s.")
+        # Only clear if clipboard still holds the same text
+        QTimer.singleShot(self.clipboard_ttl_ms, lambda: self._clear_clipboard_if_unchanged(text))
+
+    def _clear_clipboard_if_unchanged(self, expected_text: str):
+        cb = QApplication.clipboard()
+        try:
+            current = cb.text() or ""
+        except Exception:
+            current = ""
+        if current == (expected_text or ""):
+            cb.setText("")
+            self._notify("Clipboard cleared.", 1500)
 
     def _open_url(self):
         url = self.urlField.text().strip()
@@ -542,6 +556,19 @@ class VaultDashboard(QWidget):
         else: return score, "Strong", "green"    
 
     # --- Folder helpers ---
+    def _notify(self, message: str, ms: int = 2000):
+        # Prefer main window status bar if available, fallback to no-op
+        app = QApplication.instance()
+        win = app.activeWindow() if app else None
+        try:
+            sb = getattr(win, 'statusBar', None)
+            if callable(sb):
+                sb().showMessage(message, ms)
+                return
+        except Exception:
+            pass
+        # As a very last resort, ignore to avoid modal popups
+        return
     def _entries_equivalent(self, a, b):
         keys = ["name", "username", "email", "url", "password", "notes", "folder"]
         for k in keys:

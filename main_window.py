@@ -18,6 +18,8 @@ class MainWindow(QMainWindow):
 
         self._build_ui()
         self._build_menu()
+        # Ensure a status bar exists for non-blocking notifications
+        self.statusBar()
 
     def _build_ui(self):
         self.dashboard = VaultDashboard(self.storage)
