@@ -8,13 +8,13 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from storage import VaultStorage
 
-from PyQt5.QtCore import Qt, QUrl
+from PyQt5.QtCore import Qt, QUrl, QStringListModel
 from PyQt5.QtGui import QDesktopServices
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QLineEdit, QTextEdit, QPushButton, QTreeWidget, QTreeWidgetItem,
     QComboBox, QMessageBox, QSplitter, QCheckBox, QToolButton, 
-    QProgressBar, QMenu, QAction, QInputDialog
+    QProgressBar, QMenu, QAction, QInputDialog, QCompleter
 )
 
 class VaultDashboard(QWidget):
@@ -138,6 +138,17 @@ class VaultDashboard(QWidget):
         self.folderField.setEditable(True)
         self.folderField.addItems(["Personal", "Work", "Finance", "Shopping", "Other"])
         self.folderField.setInsertPolicy(QComboBox.NoInsert)
+        # Autocomplete for existing folder paths without filling the dropdown
+        self.folderModel = QStringListModel([])
+        self.folderCompleter = QCompleter(self.folderModel, self)
+        self.folderCompleter.setCaseSensitivity(Qt.CaseInsensitive)
+        try:
+            # Qt >= 5.10
+            self.folderCompleter.setFilterMode(Qt.MatchContains)
+        except Exception:
+            pass
+        self.folderCompleter.setCompletionMode(QCompleter.PopupCompletion)
+        self.folderField.setCompleter(self.folderCompleter)
         self.tagsField = QLineEdit()
         self.tagsField.setPlaceholderText("Comma-separated (e.g., banking, 2fa)")
 
@@ -216,7 +227,7 @@ class VaultDashboard(QWidget):
         if ok and name:
             folder = QTreeWidgetItem([name])
             self.entry_tree.addTopLevelItem(folder)
-            # Reflect in folder field list for convenience
+            # Update suggestions
             self._ensure_folder_in_combo(name)
 
     def _create_subfolder(self, parent_item):
@@ -225,14 +236,14 @@ class VaultDashboard(QWidget):
             subfolder = QTreeWidgetItem([name])
             parent_item.addChild(subfolder)
             parent_item.setExpanded(True)
-            # Update combo with full path
+            # Update suggestions with full path
             self._ensure_folder_in_combo(self._item_path(subfolder))
 
     def _rename_folder(self, item):
         new_name, ok = QInputDialog.getText(self, "Rename Folder", "New name:", text=item.text(0))
         if ok and new_name:
             item.setText(0, new_name)
-            # Keep combo list roughly in sync
+            # Keep folder suggestions roughly in sync
             self._refresh_combo_from_tree()
 
     def _delete_folder(self, item):
@@ -293,7 +304,7 @@ class VaultDashboard(QWidget):
             folder_item.addChild(item)
 
         self.delete_btn.setEnabled(False)
-        # Refresh folder list dropdown with current folders
+        # Refresh folder suggestions with current folders
         self._refresh_combo_from_tree()
 
     def _filter_tree(self, term):
@@ -398,7 +409,7 @@ class VaultDashboard(QWidget):
         self.notesField.setPlainText(e.get("notes", ""))
         self.tagsField.setText(", ".join(e.get("tags", [])))
         folder = e.get("folder") or "Other"
-        # Ensure folder is visible in dropdown and set the text
+        # Ensure folder path appears in suggestions and set the text
         self._ensure_folder_in_combo(folder)
         self.folderField.setCurrentText(folder)
         self._update_strength()
@@ -598,21 +609,23 @@ class VaultDashboard(QWidget):
         return paths
 
     def _ensure_folder_in_combo(self, path: str):
+        # Ensure the completer model contains this path without bloating the dropdown
         if not path:
             return
-        # Add if not present
-        if self.folderField.findText(path) < 0:
-            self.folderField.addItem(path)
+        paths = set(self.folderModel.stringList())
+        if path not in paths:
+            paths.add(path)
+            self.folderModel.setStringList(sorted(paths))
 
     def _refresh_combo_from_tree(self):
-        # Keep defaults, then add all folders seen in the tree
+        # Keep dropdown compact with defaults only; update completer with full set
         defaults = ["Personal", "Work", "Finance", "Shopping", "Other"]
         cur = self.folderField.currentText()
         self.folderField.clear()
         self.folderField.setEditable(True)
         self.folderField.addItems(defaults)
-        for p in sorted(set(self._collect_folder_paths())):
-            if p not in defaults:
-                self.folderField.addItem(p)
+        # Update completer suggestions with existing folders (including defaults)
+        paths = sorted(set(self._collect_folder_paths()) | set(defaults))
+        self.folderModel.setStringList(paths)
         if cur:
             self.folderField.setCurrentText(cur)
