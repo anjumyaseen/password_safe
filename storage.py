@@ -121,6 +121,32 @@ class VaultStorage:
             self.save()
         return True
 
+    def change_master_password(self, old_password: str, new_password: str, iterations: int = 200_000) -> bool:
+        """Change the master password and re-encrypt the vault.
+
+        Returns True on success, False if the old password is invalid.
+        Raises RuntimeError if cryptography/AESGCM is unavailable.
+        """
+        if AESGCM is None:
+            raise RuntimeError("cryptography is required to change the master password")
+
+        # Verify old password and ensure entries are decrypted in memory
+        if not self.verify_master_password(old_password):
+            return False
+
+        # Derive new key and update master record
+        salt = os.urandom(16)
+        new_key = hashlib.pbkdf2_hmac("sha256", new_password.encode("utf-8"), salt, iterations)
+        self._data["master"] = {
+            "salt": base64.b64encode(salt).decode("ascii"),
+            "hash": base64.b64encode(new_key).decode("ascii"),
+            "iterations": iterations,
+        }
+        # Swap in the new key and persist (will write encrypted blob with new key)
+        self._key = new_key
+        self.save()
+        return True
+
     def list_entries(self):
         return list(self._entries)
 

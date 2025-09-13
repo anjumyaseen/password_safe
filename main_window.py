@@ -5,7 +5,8 @@ import base64
 import hashlib
 from datetime import datetime, timezone
 from PyQt5.QtWidgets import (
-    QMainWindow, QAction, QFileDialog, QMessageBox, QApplication, QDialog, QInputDialog, QLineEdit, QCheckBox
+    QMainWindow, QAction, QFileDialog, QMessageBox, QApplication, QDialog, QInputDialog, QLineEdit, QCheckBox,
+    QWidget, QFormLayout, QVBoxLayout, QPushButton, QHBoxLayout
 )
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import QTimer
@@ -54,6 +55,11 @@ class MainWindow(QMainWindow):
         import_enc_action.triggered.connect(self._import_encrypted)
         file_menu.addAction(import_enc_action)
 
+        file_menu.addSeparator()
+        change_master_action = QAction("Change Master Password...", self)
+        change_master_action.triggered.connect(self._change_master_password)
+        file_menu.addAction(change_master_action)
+
         quit_action = QAction("Quit", self)
         quit_action.setShortcut("Ctrl+Q")
         quit_action.triggered.connect(self.close)
@@ -63,6 +69,9 @@ class MainWindow(QMainWindow):
         about_action = QAction("About", self)
         about_action.triggered.connect(self._about)
         help_menu.addAction(about_action)
+
+    def _about(self):
+        QMessageBox.information(self, "About", "Simple Vault\n\n- Master password for unlocking\n- Add/Edit/Delete entries\n- Password generator & strength meter\n- Clipboard copy buttons\n- JSON persistence")
 
     def _export_json(self):
         # Strong warning and typed confirmation
@@ -248,8 +257,75 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to import encrypted vault: {e}")
 
-    def _about(self):
-        QMessageBox.information(self, "About", "Simple Vault\n\n- Master password for unlocking\n- Add/Edit/Delete entries\n- Password generator & strength meter\n- Clipboard copy buttons\n- JSON persistence")
+    # --- Change master password ---
+    def _change_master_password(self):
+        dlg = ChangeMasterDialog(self)
+        if dlg.exec_() != QDialog.Accepted:
+            return
+        old_pw, new_pw = dlg.values()
+        try:
+            ok = self.storage.change_master_password(old_pw, new_pw)
+        except RuntimeError as ex:
+            QMessageBox.critical(self, "Unavailable", str(ex))
+            return
+        if not ok:
+            QMessageBox.critical(self, "Invalid password", "Current master password is incorrect.")
+            return
+        QMessageBox.information(self, "Success", "Master password changed and vault re-encrypted.")
+
+
+class ChangeMasterDialog(QDialog):
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setWindowTitle("Change Master Password")
+        self.setModal(True)
+        self.setMinimumWidth(360)
+        self._build_ui()
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+
+        self.current = QLineEdit()
+        self.current.setEchoMode(QLineEdit.Password)
+        self.new = QLineEdit()
+        self.new.setEchoMode(QLineEdit.Password)
+        self.confirm = QLineEdit()
+        self.confirm.setEchoMode(QLineEdit.Password)
+
+        form.addRow("Current password:", self.current)
+        form.addRow("New password:", self.new)
+        form.addRow("Confirm new:", self.confirm)
+
+        btns = QHBoxLayout()
+        ok = QPushButton("Change")
+        cancel = QPushButton("Cancel")
+        ok.clicked.connect(self._on_accept)
+        cancel.clicked.connect(self.reject)
+        btns.addWidget(ok)
+        btns.addWidget(cancel)
+        btns.addStretch()
+
+        layout.addLayout(form)
+        layout.addLayout(btns)
+
+    def _on_accept(self):
+        cur = self.current.text()
+        new = self.new.text()
+        con = self.confirm.text()
+        if not cur or not new or not con:
+            QMessageBox.warning(self, "Required", "Please fill all fields.")
+            return
+        if new != con:
+            QMessageBox.warning(self, "Mismatch", "New passwords do not match.")
+            return
+        if len(new) < 8:
+            QMessageBox.warning(self, "Weak password", "Use at least 8 characters.")
+            return
+        self.accept()
+
+    def values(self):
+        return self.current.text(), self.new.text()
 
 
 def main():
