@@ -268,20 +268,24 @@ class MainWindow(QMainWindow):
         try:
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
-            # Optional safeguard: offer auto-delete after X minutes
-            minutes = int(getattr(self, 'settings', {}).get("plaintext_export_autodelete_min", 10) or 10)
+            # Optional safeguard: offer auto-delete after X seconds (fallback to legacy minutes)
+            if 'plaintext_export_autodelete_sec' in self.settings:
+                secs = int(self.settings.get('plaintext_export_autodelete_sec', 600) or 600)
+            else:
+                mins_legacy = int(self.settings.get('plaintext_export_autodelete_min', 10) or 10)
+                secs = mins_legacy * 60
             box = QMessageBox(self)
             box.setIcon(QMessageBox.Warning)
             box.setWindowTitle("Plaintext Export Created")
             box.setText(
                 f"Plaintext file saved to:\n{path}\n\nConsider deleting it soon."
             )
-            cb = QCheckBox(f"Auto-delete after {minutes} minutes")
+            cb = QCheckBox(f"Auto-delete after {secs} seconds")
             box.setCheckBox(cb)
             box.addButton("OK", QMessageBox.AcceptRole)
             box.exec_()
             if cb.isChecked():
-                QTimer.singleShot(minutes * 60 * 1000, lambda: self._try_delete_file(path))
+                QTimer.singleShot(secs * 1000, lambda: self._try_delete_file(path))
             QMessageBox.information(self, "Exported", "Vault exported successfully (PLAINTEXT).")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to export: {e}")
@@ -610,9 +614,10 @@ class PreferencesDialog(QDialog):
         self.require_show.setChecked(bool(self._values.get("require_show_to_copy", False)))
 
         self.plain_autodel = QSpinBox()
-        self.plain_autodel.setRange(1, 120)
-        self.plain_autodel.setSuffix(" min")
-        self.plain_autodel.setValue(int(self._values.get("plaintext_export_autodelete_min", 10) or 10))
+        self.plain_autodel.setRange(10, 3600)
+        self.plain_autodel.setSuffix(" s")
+        default_export_sec = int(self._values.get("plaintext_export_autodelete_sec", self._values.get("plaintext_export_autodelete_min", 10) * 60 if self._values.get("plaintext_export_autodelete_min") else 600))
+        self.plain_autodel.setValue(default_export_sec)
 
         self.auto_lock_enable = QCheckBox("Enable auto-lock when idle")
         self.auto_lock_enable.setChecked(bool(self._values.get("auto_lock_enabled", True)))
@@ -643,7 +648,7 @@ class PreferencesDialog(QDialog):
     def _on_accept(self):
         self._values["clipboard_ttl_sec"] = int(self.clip_ttl.value())
         self._values["require_show_to_copy"] = bool(self.require_show.isChecked())
-        self._values["plaintext_export_autodelete_min"] = int(self.plain_autodel.value())
+        self._values["plaintext_export_autodelete_sec"] = int(self.plain_autodel.value())
         self._values["auto_lock_enabled"] = bool(self.auto_lock_enable.isChecked())
         self._values["auto_lock_seconds"] = int(self.auto_lock_sec.value())
         self.accept()

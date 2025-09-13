@@ -5,7 +5,8 @@ import os
 DEFAULT_SETTINGS = {
     "clipboard_ttl_sec": 30,
     "require_show_to_copy": False,
-    "plaintext_export_autodelete_min": 10,
+    # Plaintext export auto-delete time in seconds
+    "plaintext_export_autodelete_sec": 600,
     # Idle lock now expressed in seconds (backward-compatible with legacy minutes key)
     "auto_lock_enabled": True,
     "auto_lock_seconds": 60,
@@ -30,6 +31,11 @@ def load_settings() -> dict:
                 if "auto_lock_minutes" in file_data and "auto_lock_seconds" not in file_data:
                     try:
                         data["auto_lock_seconds"] = int(file_data.get("auto_lock_minutes", 5)) * 60
+                    except Exception:
+                        pass
+                if "plaintext_export_autodelete_min" in file_data and "plaintext_export_autodelete_sec" not in file_data:
+                    try:
+                        data["plaintext_export_autodelete_sec"] = int(file_data.get("plaintext_export_autodelete_min", 10)) * 60
                     except Exception:
                         pass
     except Exception:
