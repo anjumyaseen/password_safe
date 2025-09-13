@@ -135,7 +135,9 @@ class VaultDashboard(QWidget):
 
         self.notesField = QTextEdit()
         self.folderField = QComboBox()
+        self.folderField.setEditable(True)
         self.folderField.addItems(["Personal", "Work", "Finance", "Shopping", "Other"])
+        self.folderField.setInsertPolicy(QComboBox.NoInsert)
         self.tagsField = QLineEdit()
         self.tagsField.setPlaceholderText("Comma-separated (e.g., banking, 2fa)")
 
@@ -178,7 +180,7 @@ class VaultDashboard(QWidget):
         menu = QMenu()
         item = self.entry_tree.itemAt(position)
         
-        # For folder items (top-level items)
+        # For folder items
         if item and not item.parent():
             add_folder_action = QAction("Create Subfolder", self)
             add_folder_action.triggered.connect(lambda: self._create_subfolder(item))
@@ -214,6 +216,8 @@ class VaultDashboard(QWidget):
         if ok and name:
             folder = QTreeWidgetItem([name])
             self.entry_tree.addTopLevelItem(folder)
+            # Reflect in folder field list for convenience
+            self._ensure_folder_in_combo(name)
 
     def _create_subfolder(self, parent_item):
         name, ok = QInputDialog.getText(self, "New Subfolder", "Subfolder name:")
@@ -221,11 +225,15 @@ class VaultDashboard(QWidget):
             subfolder = QTreeWidgetItem([name])
             parent_item.addChild(subfolder)
             parent_item.setExpanded(True)
+            # Update combo with full path
+            self._ensure_folder_in_combo(self._item_path(subfolder))
 
     def _rename_folder(self, item):
         new_name, ok = QInputDialog.getText(self, "Rename Folder", "New name:", text=item.text(0))
         if ok and new_name:
             item.setText(0, new_name)
+            # Keep combo list roughly in sync
+            self._refresh_combo_from_tree()
 
     def _delete_folder(self, item):
         if item.childCount() > 0:
@@ -240,6 +248,7 @@ class VaultDashboard(QWidget):
         (item.parent() or self.entry_tree).takeTopLevelItem(
             (item.parent() or self.entry_tree).indexOfTopLevelItem(item)
         )
+        self._refresh_combo_from_tree()
 
     def _copy_entry(self, item):
         entry_id = item.data(0, Qt.UserRole)
@@ -254,10 +263,7 @@ class VaultDashboard(QWidget):
 
     def _move_entry(self, item):
         entry_id = item.data(0, Qt.UserRole)
-        folders = []
-        for i in range(self.entry_tree.topLevelItemCount()):
-            folder = self.entry_tree.topLevelItem(i)
-            folders.append(folder.text(0))
+        folders = self._collect_folder_paths()
         
         folder_name, ok = QInputDialog.getItem(
             self, "Move Entry", "Select destination folder:",
@@ -273,26 +279,22 @@ class VaultDashboard(QWidget):
 
     def _load_entries(self):
         self.entry_tree.clear()
-        folders = {}
-        
-        # Ensure default folders exist
-        for folder in ["Personal", "Work", "Finance", "Shopping", "Other"]:
-            if folder not in folders:
-                folders[folder] = QTreeWidgetItem([folder])
-                self.entry_tree.addTopLevelItem(folders[folder])
-        
-        # Load entries
+        # Always ensure default top-level folders exist
+        defaults = ["Personal", "Work", "Finance", "Shopping", "Other"]
+        for d in defaults:
+            self._get_or_create_folder_item(d)
+
+        # Load entries into possibly nested folder paths
         for e in self.storage.list_entries():
-            folder = e.get("folder", "Other")
-            if folder not in folders:
-                folders[folder] = QTreeWidgetItem([folder])
-                self.entry_tree.addTopLevelItem(folders[folder])
-            
+            folder_path = e.get("folder") or "Other"
+            folder_item = self._get_or_create_folder_item(folder_path)
             item = QTreeWidgetItem([e.get("name", "(no name)")])
             item.setData(0, Qt.UserRole, e["id"])
-            folders[folder].addChild(item)
-        
+            folder_item.addChild(item)
+
         self.delete_btn.setEnabled(False)
+        # Refresh folder list dropdown with current folders
+        self._refresh_combo_from_tree()
 
     def _filter_tree(self, term):
         term = (term or "").strip().lower()
@@ -309,11 +311,16 @@ class VaultDashboard(QWidget):
 
     def _on_select_tree(self):
         items = self.entry_tree.selectedItems()
-        if not items or not items[0].parent():
+        if not items:
             self.delete_btn.setEnabled(False)
             return
         item = items[0]
         entry_id = item.data(0, Qt.UserRole)
+        # If a folder is selected (no entry id), prefill folder field with its path
+        if entry_id is None:
+            self.folderField.setCurrentText(self._item_path(item))
+            self.delete_btn.setEnabled(False)
+            return
         data = next((e for e in self.storage.list_entries() if e["id"] == entry_id), None)
         if data:
             self.current_id = entry_id
@@ -322,6 +329,12 @@ class VaultDashboard(QWidget):
 
     def _new_entry(self):
         self._clear_form()
+        # Default folder to currently selected folder if a folder is selected
+        items = self.entry_tree.selectedItems()
+        if items:
+            it = items[0]
+            if it and it.data(0, Qt.UserRole) is None:
+                self.folderField.setCurrentText(self._item_path(it))
         self.nameField.setFocus()
 
     def _clear_form(self):
@@ -333,7 +346,9 @@ class VaultDashboard(QWidget):
         self.passwordField.clear()
         self.notesField.clear()
         self.tagsField.clear()
-        self.folderField.setCurrentIndex(0)
+        # Keep current folder selection text, otherwise default to Personal
+        if not self.folderField.currentText().strip():
+            self.folderField.setCurrentText("Personal")
         self.entry_tree.clearSelection()
         self.delete_btn.setEnabled(False)
         self._update_strength()
@@ -383,8 +398,9 @@ class VaultDashboard(QWidget):
         self.notesField.setPlainText(e.get("notes", ""))
         self.tagsField.setText(", ".join(e.get("tags", [])))
         folder = e.get("folder") or "Other"
-        idx = self.folderField.findText(folder)
-        self.folderField.setCurrentIndex(idx if idx >= 0 else 0)
+        # Ensure folder is visible in dropdown and set the text
+        self._ensure_folder_in_combo(folder)
+        self.folderField.setCurrentText(folder)
         self._update_strength()
 
     def _save_entry(self):
@@ -394,10 +410,36 @@ class VaultDashboard(QWidget):
             return
 
         if self.current_id:
-            updated = entry.copy()
-            self.storage.update_entry(self.current_id, updated)
-            self._load_entries()
-            QMessageBox.information(self, "Saved", "Entry updated.")
+            # We have an entry selected; ask user if they want to update or save as new
+            existing = next((e for e in self.storage.list_entries() if e["id"] == self.current_id), None)
+            if existing is not None and self._entries_equivalent(existing, entry):
+                # No change; nothing to do
+                QMessageBox.information(self, "No changes", "Nothing changed to save.")
+                return
+
+            box = QMessageBox(self)
+            box.setIcon(QMessageBox.Question)
+            box.setWindowTitle("Update or Save as New?")
+            box.setText("You are editing an existing entry. Do you want to update it or save as a new entry?")
+            update_btn = box.addButton("Update Existing", QMessageBox.AcceptRole)
+            new_btn = box.addButton("Save as New", QMessageBox.ActionRole)
+            cancel_btn = box.addButton(QMessageBox.Cancel)
+            box.setDefaultButton(new_btn)
+            box.exec_()
+
+            clicked = box.clickedButton()
+            if clicked is cancel_btn:
+                return
+            elif clicked is new_btn:
+                created = self.storage.add_entry(entry)
+                self._load_entries()
+                self.current_id = created["id"]
+                QMessageBox.information(self, "Saved", f"New entry '{entry['name']}' added.")
+            else:
+                updated = entry.copy()
+                self.storage.update_entry(self.current_id, updated)
+                self._load_entries()
+                QMessageBox.information(self, "Saved", "Entry updated.")
         else:
             created = self.storage.add_entry(entry)
             self._load_entries()
@@ -487,3 +529,90 @@ class VaultDashboard(QWidget):
         elif score < 50: return score, "Weak", "orange"
         elif score < 75: return score, "Good", "gold"
         else: return score, "Strong", "green"    
+
+    # --- Folder helpers ---
+    def _entries_equivalent(self, a, b):
+        keys = ["name", "username", "email", "url", "password", "notes", "folder"]
+        for k in keys:
+            if (a.get(k) or "").strip() != (b.get(k) or "").strip():
+                return False
+        # Compare tags ignoring order/whitespace
+        at = sorted([t.strip() for t in a.get("tags", []) if t.strip()])
+        bt = sorted([t.strip() for t in b.get("tags", []) if t.strip()])
+        return at == bt
+    def _item_path(self, item):
+        parts = []
+        it = item
+        while it is not None and it.text(0):
+            parts.append(it.text(0))
+            it = it.parent()
+        return "/".join(reversed(parts))
+
+    def _get_or_create_folder_item(self, path: str):
+        # Accept nested paths like "Entertainment/Netflix"
+        parts = [p for p in (path or "Other").split("/") if p]
+        if not parts:
+            parts = ["Other"]
+        # Find or create the top-level item
+        parent = None
+        # Search for existing top-level with the given name
+        def _find_child(parent_item, name):
+            if parent_item is None:
+                # search top-level
+                for i in range(self.entry_tree.topLevelItemCount()):
+                    it = self.entry_tree.topLevelItem(i)
+                    if it.text(0) == name:
+                        return it
+                return None
+            else:
+                for j in range(parent_item.childCount()):
+                    ch = parent_item.child(j)
+                    if ch.text(0) == name:
+                        return ch
+                return None
+
+        current = None
+        for idx, name in enumerate(parts):
+            found = _find_child(current, name)
+            if not found:
+                node = QTreeWidgetItem([name])
+                if current is None:
+                    self.entry_tree.addTopLevelItem(node)
+                else:
+                    current.addChild(node)
+                current = node
+            else:
+                current = found
+        return current
+
+    def _collect_folder_paths(self):
+        paths = []
+        def _walk(item, base=None):
+            name = item.text(0)
+            path = name if not base else f"{base}/{name}"
+            paths.append(path)
+            for i in range(item.childCount()):
+                _walk(item.child(i), path)
+        for i in range(self.entry_tree.topLevelItemCount()):
+            _walk(self.entry_tree.topLevelItem(i), None)
+        return paths
+
+    def _ensure_folder_in_combo(self, path: str):
+        if not path:
+            return
+        # Add if not present
+        if self.folderField.findText(path) < 0:
+            self.folderField.addItem(path)
+
+    def _refresh_combo_from_tree(self):
+        # Keep defaults, then add all folders seen in the tree
+        defaults = ["Personal", "Work", "Finance", "Shopping", "Other"]
+        cur = self.folderField.currentText()
+        self.folderField.clear()
+        self.folderField.setEditable(True)
+        self.folderField.addItems(defaults)
+        for p in sorted(set(self._collect_folder_paths())):
+            if p not in defaults:
+                self.folderField.addItem(p)
+        if cur:
+            self.folderField.setCurrentText(cur)

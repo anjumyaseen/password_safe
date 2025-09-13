@@ -10,28 +10,17 @@ It securely stores your credentials (usernames, emails, URLs, notes) in an encry
 ## 📂 Project Structure
 
 ```
-password-safe/
+password_safe/
 │
-├── password_safe/              # Main application package
-│   ├── __init__.py             # Version, package info
-│   ├── main.py                 # Entry point
-│   ├── dashboard.py            # Password vault dashboard (UI)
-│   ├── main_window.py          # Main window wrapper
-│   ├── login_dialog.py         # Login / unlock dialog
-│   ├── storage.py              # Vault storage and encryption logic
-│   └── __pycache__/            # Python cache files (ignored)
-│
-├── assets/                     # Icons, images (e.g., app.ico)
-│   └── new-cir-logo.png
-│
-├── tests/                      # (optional) Unit tests
-│
-├── .gitignore                  # Git ignore rules
-├── pyproject.toml              # Project metadata & dependencies
-├── requirements.txt            # Python dependencies
-├── README.md                   # Project documentation
-├── CHANGELOG.md                 # Version history
-└── LICENSE                      # License (MIT recommended)
+├── main.py               # Entry point
+├── main_window.py        # Main window wrapper
+├── login_dialog.py       # Login / unlock dialog
+├── dashboard.py          # Password vault dashboard (UI)
+├── storage.py            # Vault storage and encryption logic (AES‑GCM at rest)
+├── requirements.txt      # Python dependencies
+├── tests/                # Unit tests
+├── .gitignore            # Git ignore rules
+└── Readme.md             # Project documentation
 ```
 
 ---
@@ -46,7 +35,9 @@ password-safe/
 * ✏️ Add / edit / delete / copy credentials
 * 🌐 Open stored URLs directly in browser
 * 📝 Notes & tags per entry
-* 📦 Encrypted JSON vault stored locally in `~/.simple_vault/vault.json`
+* 📦 Encryption at rest (AES‑GCM via `cryptography`), vault stored at `~/.simple_vault/vault.json`
+* 🔁 Automatic migration of older plaintext vaults on first unlock
+* 🗂️ Custom folders and nested subfolders (use paths like `Entertainment/Netflix`)
 
 ---
 
@@ -76,7 +67,10 @@ password-safe/
 4. Run app:
 
    ```bash
-   python -m password_safe
+   python -m venv .venv
+   source .venv/bin/activate   # Windows: .venv\Scripts\activate
+   pip install -r requirements.txt
+   python main.py
    ```
 
 ---
@@ -109,3 +103,8 @@ MIT License – feel free to use and modify.
 
 ---
 
+## 🔒 Security Notes
+
+- Encryption: Entries are encrypted at rest using AES‑GCM with a key derived from your master password (PBKDF2‑HMAC‑SHA256).
+- Migration: If a legacy plaintext vault is detected, it is encrypted automatically after the first successful unlock.
+- Export: The Export to JSON feature writes unencrypted data for portability. Treat exported files as sensitive and remove them when no longer needed.
