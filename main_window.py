@@ -6,7 +6,7 @@ import hashlib
 from datetime import datetime, timezone
 from PyQt5.QtWidgets import (
     QMainWindow, QAction, QFileDialog, QMessageBox, QApplication, QDialog, QInputDialog, QLineEdit, QCheckBox,
-    QWidget, QFormLayout, QVBoxLayout, QPushButton, QHBoxLayout, QTabWidget
+    QWidget, QFormLayout, QVBoxLayout, QPushButton, QHBoxLayout, QTabWidget, QLabel
 )
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import QTimer
@@ -20,7 +20,7 @@ from settings import load_settings, save_settings
 try:
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 except Exception:
-AESGCM = None
+    AESGCM = None
 
 class LockedView(QWidget):
     def __init__(self, storage: VaultStorage, on_unlock, title: str = "Vault Locked"):
@@ -53,7 +53,7 @@ class MainWindow(QMainWindow):
         self.locked = False
         self._last_activity_ms = 0
         self._idle_timer = QTimer(self)
-        self._idle_timer.setInterval(10_000)
+        self._idle_timer.setInterval(5_000)
         self._idle_timer.timeout.connect(self._check_idle_lock)
 
         self._build_ui()
@@ -123,10 +123,7 @@ class MainWindow(QMainWindow):
         lock_action.triggered.connect(self._lock_all)
         file_menu.addAction(lock_action)
 
-        unlock_action_file = QAction("Unlock Current Vault...", self)
-        unlock_action_file.setShortcut("Ctrl+U")
-        unlock_action_file.triggered.connect(self._unlock_current)
-        file_menu.addAction(unlock_action_file)
+        # No Unlock menu (unlock via locked tab button)
 
         file_menu.addSeparator()
         change_master_action = QAction("Change Master Password...", self)
@@ -166,10 +163,6 @@ class MainWindow(QMainWindow):
         faq_action = QAction("FAQ", self)
         faq_action.triggered.connect(self._faq)
         help_menu.addAction(faq_action)
-        unlock_action = QAction("Unlock Current Vault...", self)
-        unlock_action.setShortcut("Ctrl+U")
-        unlock_action.triggered.connect(self._unlock_current)
-        help_menu.addAction(unlock_action)
 
     def _about(self):
         cs = self._current_storage() or self.storage
@@ -197,6 +190,7 @@ class MainWindow(QMainWindow):
     def _faq(self):
         cs = self._current_storage() or self.storage
         vault_path = getattr(cs, 'path', '(unknown)')
+        lock_default = int(getattr(self, 'settings', {}).get('auto_lock_minutes', 5) or 5)
         html = f"""
         <h3>Frequently Asked Questions</h3>
         <p><b>Where is my vault stored?</b><br>
@@ -209,6 +203,12 @@ class MainWindow(QMainWindow):
         It’s under <i>Export → Advanced</i> with strong warnings and an optional auto‑delete timer. Use only for migration.</p>
         <p><b>Clipboard auto‑clear?</b><br>
         Copies clear automatically after the configured TTL (Edit → Preferences). A countdown appears in the status bar.</p>
+        <p><b>Locking & unlocking?</b><br>
+        Lock immediately via <i>File → Lock Now</i> (Ctrl+L). Unlock the active vault via <i>File/Help → Unlock Current Vault…</i> (Ctrl+U) or by clicking <i>Unlock…</i> on the locked tab panel and entering your master password.</p>
+        <p><b>Idle auto‑lock?</b><br>
+        Enabled by default at {lock_default} minutes. Configure under <i>Edit → Preferences…</i> (enable/disable and timeout).</p>
+        <p><b>Multiple vaults?</b><br>
+        Open several vaults as tabs via <i>File → New/Open Vault…</i>. Tabs are closable and rearrangeable (drag to reorder).</p>
         <p><b>Change master password?</b><br>
         Use <i>File → Change Master Password…</i>. The vault is re‑encrypted with the new key.</p>
         """
@@ -379,11 +379,17 @@ class MainWindow(QMainWindow):
         try:
             if not self.settings.get('auto_lock_enabled', True):
                 return
-            minutes = int(self.settings.get('auto_lock_minutes', 5) or 5)
-            if minutes <= 0:
+            # Support seconds (new) and legacy minutes
+            seconds = 0
+            if 'auto_lock_seconds' in self.settings:
+                seconds = int(self.settings.get('auto_lock_seconds', 60) or 60)
+            else:
+                minutes = int(self.settings.get('auto_lock_minutes', 5) or 5)
+                seconds = max(0, minutes) * 60
+            if seconds <= 0:
                 return
             now_ms = int(QtCore.QDateTime.currentMSecsSinceEpoch())
-            if self._last_activity_ms and (now_ms - self._last_activity_ms) >= minutes * 60 * 1000:
+            if self._last_activity_ms and (now_ms - self._last_activity_ms) >= seconds * 1000:
                 self._lock_all()
         except Exception:
             pass
@@ -437,6 +443,8 @@ class MainWindow(QMainWindow):
             self.tabs.setCurrentIndex(index)
         except Exception:
             pass
+        # Reset idle timer upon successful unlock
+        self._reset_activity_timer()
         # Clear locked flag if no LockedView remains
         self.locked = any(isinstance(self.tabs.widget(i), LockedView) for i in range(self.tabs.count()))
         self._refresh_title_and_status()
@@ -608,16 +616,17 @@ class PreferencesDialog(QDialog):
 
         self.auto_lock_enable = QCheckBox("Enable auto-lock when idle")
         self.auto_lock_enable.setChecked(bool(self._values.get("auto_lock_enabled", True)))
-        self.auto_lock_min = QSpinBox()
-        self.auto_lock_min.setRange(1, 120)
-        self.auto_lock_min.setSuffix(" min")
-        self.auto_lock_min.setValue(int(self._values.get("auto_lock_minutes", 5) or 5))
+        self.auto_lock_sec = QSpinBox()
+        self.auto_lock_sec.setRange(10, 3600)
+        self.auto_lock_sec.setSuffix(" s")
+        default_secs = int(self._values.get("auto_lock_seconds", self._values.get("auto_lock_minutes", 1) * 60 if self._values.get("auto_lock_minutes") else 60))
+        self.auto_lock_sec.setValue(default_secs)
 
         form.addRow("Clipboard auto-clear:", self.clip_ttl)
         form.addRow("Password copy safety:", self.require_show)
         form.addRow("Plaintext export auto-delete:", self.plain_autodel)
         form.addRow("Auto-lock:", self.auto_lock_enable)
-        form.addRow("Lock after:", self.auto_lock_min)
+        form.addRow("Lock after:", self.auto_lock_sec)
 
         btns = QHBoxLayout()
         ok = QPushButton("Save")
@@ -636,7 +645,7 @@ class PreferencesDialog(QDialog):
         self._values["require_show_to_copy"] = bool(self.require_show.isChecked())
         self._values["plaintext_export_autodelete_min"] = int(self.plain_autodel.value())
         self._values["auto_lock_enabled"] = bool(self.auto_lock_enable.isChecked())
-        self._values["auto_lock_minutes"] = int(self.auto_lock_min.value())
+        self._values["auto_lock_seconds"] = int(self.auto_lock_sec.value())
         self.accept()
 
     def values(self) -> dict:
