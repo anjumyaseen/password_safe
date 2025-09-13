@@ -25,6 +25,11 @@ class VaultDashboard(QWidget):
         self.current_id = None
         self.gen_length = 16
         self.clipboard_ttl_ms = 30_000  # auto-clear clipboard TTL
+        # Clipboard countdown state
+        self._clip_timer = None
+        self._clip_expected = None
+        self._clip_label = None
+        self._clip_countdown = 0
         self._build_ui()
         self._load_entries()
 
@@ -465,9 +470,12 @@ class VaultDashboard(QWidget):
             return
         cb = QApplication.clipboard()
         cb.setText(text)
-        self._notify(f"{label} copied. Clipboard clears in 30s.")
-        # Only clear if clipboard still holds the same text
-        QTimer.singleShot(self.clipboard_ttl_ms, lambda: self._clear_clipboard_if_unchanged(text))
+        # Setup countdown
+        self._clip_expected = text
+        self._clip_label = label
+        self._clip_countdown = max(1, int(self.clipboard_ttl_ms / 1000))
+        self._start_clipboard_timer()
+        self._notify(f"{label} copied. Clears in {self._clip_countdown}s.", 1100)
 
     def _clear_clipboard_if_unchanged(self, expected_text: str):
         cb = QApplication.clipboard()
@@ -478,6 +486,57 @@ class VaultDashboard(QWidget):
         if current == (expected_text or ""):
             cb.setText("")
             self._notify("Clipboard cleared.", 1500)
+        # Reset state
+        self._clip_expected = None
+        self._clip_label = None
+        self._clip_countdown = 0
+
+    def _start_clipboard_timer(self):
+        # Stop any existing timer
+        if self._clip_timer is not None:
+            try:
+                self._clip_timer.stop()
+                self._clip_timer.deleteLater()
+            except Exception:
+                pass
+            self._clip_timer = None
+
+        self._clip_timer = QTimer(self)
+        self._clip_timer.setInterval(1000)
+        self._clip_timer.timeout.connect(self._tick_clipboard)
+        self._clip_timer.start()
+
+    def _tick_clipboard(self):
+        # If clipboard changed, stop countdown
+        cb = QApplication.clipboard()
+        try:
+            current = cb.text() or ""
+        except Exception:
+            current = ""
+        if self._clip_expected is None or current != (self._clip_expected or ""):
+            # Someone copied something else; stop timer silently
+            if self._clip_timer is not None:
+                self._clip_timer.stop()
+                self._clip_timer.deleteLater()
+                self._clip_timer = None
+            self._clip_expected = None
+            self._clip_label = None
+            self._clip_countdown = 0
+            return
+
+        # Countdown and update status
+        self._clip_countdown = max(0, self._clip_countdown - 1)
+        if self._clip_countdown > 0:
+            if self._clip_label:
+                self._notify(f"{self._clip_label} copied. Clears in {self._clip_countdown}s.", 1100)
+            return
+
+        # Time to clear
+        if self._clip_timer is not None:
+            self._clip_timer.stop()
+            self._clip_timer.deleteLater()
+            self._clip_timer = None
+        self._clear_clipboard_if_unchanged(self._clip_expected or "")
 
     def _open_url(self):
         url = self.urlField.text().strip()
