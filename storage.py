@@ -147,6 +147,17 @@ class VaultStorage:
         self.save()
         return True
 
+    def lock(self):
+        """Forget the in-memory key and entries; require re-unlock.
+
+        Disk remains encrypted. Next verify_master_password() will decrypt entries again.
+        """
+        self._key = None
+        try:
+            self._entries = []
+        except Exception:
+            pass
+
     def list_entries(self):
         return list(self._entries)
 

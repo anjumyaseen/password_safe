@@ -39,6 +39,8 @@ password_safe/
 * 🔁 Automatic migration of older plaintext vaults on first unlock
 * 🗂️ Custom folders and nested subfolders (use paths like `Entertainment/Netflix`)
 * ⬆️ Export Encrypted by default; plaintext export only under Advanced with strong warnings
+* 🧷 Multi‑vault tabs: open multiple vaults side‑by‑side (New/Open/Close)
+* 🔒 Idle auto‑lock and Lock Now menu for quick security
 
 ---
 
@@ -144,6 +146,7 @@ Open via Edit → Preferences…
 - Clipboard auto-clear: Number of seconds before the clipboard is cleared after a Copy (default 30s). A live countdown appears in the main window status bar at the bottom (e.g., “Password copied. Clears in 29s”). The app clears the clipboard only if it still contains the same copied value, so it won’t erase newer clipboard content.
 - Require “Show” before copying password: Optional UX guardrail. When enabled, the password must be visible (Show checked) before it can be copied. This reduces accidental copies but can increase shoulder‑surfing risk; leave off unless you value the extra step. Default: off.
 - Plaintext export auto-delete (minutes): Best‑effort timer to delete a plaintext export created via Advanced → Export Plaintext. Works only while the app remains open and is not a secure wipe (no disk overwrite).
+- Auto‑lock: Option to enable idle auto‑lock and choose the timeout (minutes). When locked, use Help → Unlock Current Vault… (or simply perform an action) to re‑enter your master password and unlock.
 
 ---
 
@@ -152,3 +155,19 @@ Open via Edit → Preferences…
 - Export Encrypted…: File → Export → Export Encrypted… (recommended). Prompts for a passphrase, produces a `.vaultenc` file using AES‑GCM with PBKDF2‑SHA256 (200k iterations).
 - Import Encrypted…: File → Import Encrypted… Select a `.vaultenc`, enter the passphrase, and the entries are imported with new IDs.
 - Export Plaintext (Not Recommended): File → Export → Advanced → Export Plaintext… Requires typing `YES` in a confirmation dialog. Optionally schedule auto‑delete (see Preferences). Treat the resulting `.json` as highly sensitive.
+
+---
+
+## 🗂️ Multi‑Vault Tabs
+
+- File → New Vault…: choose a filename (e.g., `personal.psf`), set a master password, opens as a new tab.
+- File → Open Vault…: pick an existing vault and unlock; opens as a new tab. Duplicate opens activate the existing tab.
+- Tabs are closable and rearrangeable (drag to move left/right). Title shows the active vault name.
+
+---
+
+## 🔒 Locking
+
+- Lock Now: File → Lock Now (Ctrl+L) immediately locks the app (for all tabs).
+- Auto‑lock: enable and set timeout in Preferences. Any user activity resets the timer.
+- Unlock: Help → Unlock Current Vault… prompts for the master password and re‑enables the active tab.

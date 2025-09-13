@@ -6,6 +6,8 @@ DEFAULT_SETTINGS = {
     "clipboard_ttl_sec": 30,
     "require_show_to_copy": False,
     "plaintext_export_autodelete_min": 10,
+    "auto_lock_enabled": True,
+    "auto_lock_minutes": 5,
 }
 
 
@@ -41,4 +43,3 @@ def save_settings(values: dict) -> None:
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
     os.replace(tmp, path)
-

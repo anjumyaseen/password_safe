@@ -6,7 +6,7 @@ import hashlib
 from datetime import datetime, timezone
 from PyQt5.QtWidgets import (
     QMainWindow, QAction, QFileDialog, QMessageBox, QApplication, QDialog, QInputDialog, QLineEdit, QCheckBox,
-    QWidget, QFormLayout, QVBoxLayout, QPushButton, QHBoxLayout
+    QWidget, QFormLayout, QVBoxLayout, QPushButton, QHBoxLayout, QTabWidget
 )
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import QTimer
@@ -20,7 +20,23 @@ from settings import load_settings, save_settings
 try:
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 except Exception:
-    AESGCM = None
+AESGCM = None
+
+class LockedView(QWidget):
+    def __init__(self, storage: VaultStorage, on_unlock, title: str = "Vault Locked"):
+        super().__init__()
+        self.storage = storage
+        self.on_unlock = on_unlock
+        self.original = None  # set by caller
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(40, 40, 40, 40)
+        lbl = QLabel(f"<h2>{title}</h2><p>This vault is locked. Click Unlock to continue.</p>")
+        btn = QPushButton("Unlock…")
+        btn.clicked.connect(lambda: self.on_unlock())
+        lay.addWidget(lbl)
+        lay.addStretch(1)
+        lay.addWidget(btn, alignment=QtCore.Qt.AlignLeft)
+        lay.addStretch(3)
 
 class MainWindow(QMainWindow):
     def __init__(self, storage: VaultStorage):
@@ -34,6 +50,11 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
         self.settings = load_settings()
+        self.locked = False
+        self._last_activity_ms = 0
+        self._idle_timer = QTimer(self)
+        self._idle_timer.setInterval(10_000)
+        self._idle_timer.timeout.connect(self._check_idle_lock)
 
         self._build_ui()
         self._build_menu()
@@ -43,18 +64,22 @@ class MainWindow(QMainWindow):
             self._refresh_title_and_status()
         except Exception:
             pass
+        # Idle lock handling
+        self._reset_activity_timer()
+        self._idle_timer.start()
+        self.installEventFilter(self)
 
     def _build_ui(self):
-        self.dashboard = VaultDashboard(self.storage)
-        try:
-            self.dashboard.apply_settings(self.settings)
-        except Exception:
-            pass
-        self.setCentralWidget(self.dashboard)
-        try:
-            self.dashboard.entries_changed.connect(self._refresh_title_and_status)
-        except Exception:
-            pass
+        # Tabbed multi-vault container
+        self.tabs = QTabWidget()
+        self.tabs.setTabsClosable(True)
+        self.tabs.setMovable(True)
+        self.tabs.tabCloseRequested.connect(self._close_tab_index)
+        self.tabs.currentChanged.connect(lambda _: self._refresh_title_and_status())
+        self.setCentralWidget(self.tabs)
+
+        # Initial tab with provided storage
+        self._add_tab_for_storage(self.storage)
 
     def _build_menu(self):
         menubar = self.menuBar()
@@ -76,6 +101,33 @@ class MainWindow(QMainWindow):
         import_enc_action.triggered.connect(self._import_encrypted)
         file_menu.addAction(import_enc_action)
 
+        # New/Open/Close vault tabs
+        new_vault_action = QAction("New Vault...", self)
+        new_vault_action.setShortcut("Ctrl+N")
+        new_vault_action.triggered.connect(self._new_vault)
+        file_menu.addAction(new_vault_action)
+
+        open_vault_action = QAction("Open Vault...", self)
+        open_vault_action.setShortcut("Ctrl+O")
+        open_vault_action.triggered.connect(self._open_vault)
+        file_menu.addAction(open_vault_action)
+
+        close_tab_action = QAction("Close Vault", self)
+        close_tab_action.setShortcut("Ctrl+W")
+        close_tab_action.triggered.connect(lambda: self._close_tab_index(self.tabs.currentIndex()))
+        file_menu.addAction(close_tab_action)
+
+        file_menu.addSeparator()
+        lock_action = QAction("Lock Now", self)
+        lock_action.setShortcut("Ctrl+L")
+        lock_action.triggered.connect(self._lock_all)
+        file_menu.addAction(lock_action)
+
+        unlock_action_file = QAction("Unlock Current Vault...", self)
+        unlock_action_file.setShortcut("Ctrl+U")
+        unlock_action_file.triggered.connect(self._unlock_current)
+        file_menu.addAction(unlock_action_file)
+
         file_menu.addSeparator()
         change_master_action = QAction("Change Master Password...", self)
         change_master_action.triggered.connect(self._change_master_password)
@@ -94,17 +146,17 @@ class MainWindow(QMainWindow):
         view_menu = menubar.addMenu("&View")
         expand_action = QAction("Expand All Folders", self)
         expand_action.setShortcut("Ctrl+Shift+E")
-        expand_action.triggered.connect(lambda: self.dashboard.expand_all())
+        expand_action.triggered.connect(lambda: self._current_dashboard() and self._current_dashboard().expand_all())
         view_menu.addAction(expand_action)
 
         collapse_action = QAction("Collapse All Folders", self)
         collapse_action.setShortcut("Ctrl+Shift+C")
-        collapse_action.triggered.connect(lambda: self.dashboard.collapse_all())
+        collapse_action.triggered.connect(lambda: self._current_dashboard() and self._current_dashboard().collapse_all())
         view_menu.addAction(collapse_action)
 
         focus_search_action = QAction("Focus Search", self)
         focus_search_action.setShortcut("Ctrl+F")
-        focus_search_action.triggered.connect(lambda: self.dashboard.focus_search())
+        focus_search_action.triggered.connect(lambda: self._current_dashboard() and self._current_dashboard().focus_search())
         view_menu.addAction(focus_search_action)
 
         help_menu = menubar.addMenu("&Help")
@@ -114,11 +166,16 @@ class MainWindow(QMainWindow):
         faq_action = QAction("FAQ", self)
         faq_action.triggered.connect(self._faq)
         help_menu.addAction(faq_action)
+        unlock_action = QAction("Unlock Current Vault...", self)
+        unlock_action.setShortcut("Ctrl+U")
+        unlock_action.triggered.connect(self._unlock_current)
+        help_menu.addAction(unlock_action)
 
     def _about(self):
-        vault_path = getattr(self.storage, 'path', '(unknown)')
+        cs = self._current_storage() or self.storage
+        vault_path = getattr(cs, 'path', '(unknown)')
         base = os.path.basename(vault_path)
-        master = getattr(self.storage, '_data', {}).get('master') if hasattr(self.storage, '_data') else None
+        master = getattr(cs, '_data', {}).get('master') if hasattr(cs, '_data') else None
         iterations = master.get('iterations', 200_000) if isinstance(master, dict) else 200_000
         try:
             import cryptography
@@ -138,7 +195,8 @@ class MainWindow(QMainWindow):
         QMessageBox.about(self, "About", html)
 
     def _faq(self):
-        vault_path = getattr(self.storage, 'path', '(unknown)')
+        cs = self._current_storage() or self.storage
+        vault_path = getattr(cs, 'path', '(unknown)')
         html = f"""
         <h3>Frequently Asked Questions</h3>
         <p><b>Where is my vault stored?</b><br>
@@ -157,13 +215,15 @@ class MainWindow(QMainWindow):
         QMessageBox.about(self, "FAQ", html)
 
     def _refresh_title_and_status(self):
-        vault_path = getattr(self.storage, 'path', '')
+        cs = self._current_storage() or self.storage
+        vault_path = getattr(cs, 'path', '')
         base = os.path.basename(vault_path) if vault_path else 'Vault'
         try:
-            entries = len(self.storage.list_entries())
+            entries = len(cs.list_entries())
         except Exception:
             entries = 0
-        self.setWindowTitle(f"Password Safe — {base} (Unlocked)")
+        state = "Locked" if self.locked else "Unlocked"
+        self.setWindowTitle(f"Password Safe — {base} ({state})")
         try:
             self.statusBar().showMessage(f"Vault: {base} | Entries: {entries}", 3000)
         except Exception:
@@ -175,7 +235,10 @@ class MainWindow(QMainWindow):
             self.settings = dlg.values()
             save_settings(self.settings)
             try:
-                self.dashboard.apply_settings(self.settings)
+                for i in range(self.tabs.count()):
+                    w = self.tabs.widget(i)
+                    if hasattr(w, 'apply_settings'):
+                        w.apply_settings(self.settings)
             except Exception:
                 pass
 
@@ -200,10 +263,8 @@ class MainWindow(QMainWindow):
         path, _ = QFileDialog.getSaveFileName(self, "Export vault as JSON (PLAINTEXT)", "", "JSON Files (*.json)")
         if not path:
             return
-        data = {
-            "version": 1,
-            "entries": self.storage.list_entries()
-        }
+        cs = self._current_storage() or self.storage
+        data = {"version": 1, "entries": cs.list_entries() if cs else []}
         try:
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
@@ -254,10 +315,11 @@ class MainWindow(QMainWindow):
             return
 
         try:
+            cs = self._current_storage() or self.storage
             plaintext = {
                 "version": 1,
                 "exported_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-                "entries": self.storage.list_entries(),
+                "entries": cs.list_entries() if cs else [],
             }
             pt = json.dumps(plaintext, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
             salt = os.urandom(16)
@@ -299,6 +361,85 @@ class MainWindow(QMainWindow):
         except Exception:
             # Best effort only; ignore failures
             pass
+
+    # --- Lock/Unlock & Idle handling ---
+    def eventFilter(self, obj, event):
+        et = getattr(event, 'type', lambda: None)()
+        if et in (2, 5, 6, 50, 51):  # mouse/keyboard events
+            self._reset_activity_timer()
+        return super().eventFilter(obj, event)
+
+    def _reset_activity_timer(self):
+        try:
+            self._last_activity_ms = int(QtCore.QDateTime.currentMSecsSinceEpoch())
+        except Exception:
+            self._last_activity_ms = 0
+
+    def _check_idle_lock(self):
+        try:
+            if not self.settings.get('auto_lock_enabled', True):
+                return
+            minutes = int(self.settings.get('auto_lock_minutes', 5) or 5)
+            if minutes <= 0:
+                return
+            now_ms = int(QtCore.QDateTime.currentMSecsSinceEpoch())
+            if self._last_activity_ms and (now_ms - self._last_activity_ms) >= minutes * 60 * 1000:
+                self._lock_all()
+        except Exception:
+            pass
+
+    def _lock_all(self):
+        if self.locked:
+            return
+        self.locked = True
+        # Replace each dashboard with a LockedView placeholder
+        for i in range(self.tabs.count() - 1, -1, -1):
+            w = self.tabs.widget(i)
+            st = getattr(w, 'storage', None)
+            if st is None or isinstance(w, LockedView):
+                continue
+            try:
+                st.lock()
+                locked = LockedView(st, on_unlock=lambda idx=i: self._unlock_tab(idx))
+                locked.original = w
+                label = self.tabs.tabText(i)
+                tip = self.tabs.tabToolTip(i)
+                self.tabs.removeTab(i)
+                self.tabs.insertTab(i, locked, label)
+                self.tabs.setTabToolTip(i, tip)
+            except Exception:
+                pass
+        self._refresh_title_and_status()
+
+    def _unlock_current(self):
+        idx = self.tabs.currentIndex()
+        self._unlock_tab(idx)
+
+    def _unlock_tab(self, index: int):
+        if index < 0 or index >= self.tabs.count():
+            return
+        w = self.tabs.widget(index)
+        if not isinstance(w, LockedView):
+            return
+        st = getattr(w, 'storage', None)
+        if not st:
+            return
+        dlg = LoginDialog(st)
+        if dlg.exec_() != QDialog.Accepted:
+            return
+        try:
+            original = w.original
+            label = self.tabs.tabText(index)
+            tip = self.tabs.tabToolTip(index)
+            self.tabs.removeTab(index)
+            self.tabs.insertTab(index, original, label)
+            self.tabs.setTabToolTip(index, tip)
+            self.tabs.setCurrentIndex(index)
+        except Exception:
+            pass
+        # Clear locked flag if no LockedView remains
+        self.locked = any(isinstance(self.tabs.widget(i), LockedView) for i in range(self.tabs.count()))
+        self._refresh_title_and_status()
 
     def _import_encrypted(self):
         if AESGCM is None:
@@ -356,7 +497,10 @@ class MainWindow(QMainWindow):
                 e.pop("id", None)
                 e.pop("created_at", None)
                 e.pop("updated_at", None)
-                self.storage.add_entry(e)
+                cs = self._current_storage() or self.storage
+                if cs is None:
+                    break
+                cs.add_entry(e)
                 imported += 1
 
             QMessageBox.information(self, "Imported", f"Imported {imported} entries.")
@@ -370,7 +514,8 @@ class MainWindow(QMainWindow):
             return
         old_pw, new_pw = dlg.values()
         try:
-            ok = self.storage.change_master_password(old_pw, new_pw)
+            cs = self._current_storage() or self.storage
+            ok = cs.change_master_password(old_pw, new_pw)
         except RuntimeError as ex:
             QMessageBox.critical(self, "Unavailable", str(ex))
             return
@@ -461,9 +606,18 @@ class PreferencesDialog(QDialog):
         self.plain_autodel.setSuffix(" min")
         self.plain_autodel.setValue(int(self._values.get("plaintext_export_autodelete_min", 10) or 10))
 
+        self.auto_lock_enable = QCheckBox("Enable auto-lock when idle")
+        self.auto_lock_enable.setChecked(bool(self._values.get("auto_lock_enabled", True)))
+        self.auto_lock_min = QSpinBox()
+        self.auto_lock_min.setRange(1, 120)
+        self.auto_lock_min.setSuffix(" min")
+        self.auto_lock_min.setValue(int(self._values.get("auto_lock_minutes", 5) or 5))
+
         form.addRow("Clipboard auto-clear:", self.clip_ttl)
         form.addRow("Password copy safety:", self.require_show)
         form.addRow("Plaintext export auto-delete:", self.plain_autodel)
+        form.addRow("Auto-lock:", self.auto_lock_enable)
+        form.addRow("Lock after:", self.auto_lock_min)
 
         btns = QHBoxLayout()
         ok = QPushButton("Save")
@@ -481,10 +635,136 @@ class PreferencesDialog(QDialog):
         self._values["clipboard_ttl_sec"] = int(self.clip_ttl.value())
         self._values["require_show_to_copy"] = bool(self.require_show.isChecked())
         self._values["plaintext_export_autodelete_min"] = int(self.plain_autodel.value())
+        self._values["auto_lock_enabled"] = bool(self.auto_lock_enable.isChecked())
+        self._values["auto_lock_minutes"] = int(self.auto_lock_min.value())
         self.accept()
 
     def values(self) -> dict:
         return dict(self._values)
+
+    # --- Tabs / multi-vault helpers ---
+    
+    
+def _norm(path: str) -> str:
+    try:
+        return os.path.abspath(path)
+    except Exception:
+        return path or ""
+
+
+def _base_dir() -> str:
+    return os.path.join(os.path.expanduser("~"), ".simple_vault")
+
+
+def _basename(path: str) -> str:
+    try:
+        return os.path.basename(path)
+    except Exception:
+        return path
+
+
+def _ensure_dir(path: str):
+    d = os.path.dirname(path)
+    if d and not os.path.exists(d):
+        os.makedirs(d, exist_ok=True)
+
+
+# Attach helper methods to MainWindow via dynamic definition below
+def _mw_add_tab_for_storage(self, storage: VaultStorage):
+    dash = VaultDashboard(storage)
+    try:
+        dash.apply_settings(self.settings)
+    except Exception:
+        pass
+    try:
+        dash.entries_changed.connect(self._refresh_title_and_status)
+    except Exception:
+        pass
+    label = _basename(getattr(storage, 'path', 'Vault')) or 'Vault'
+    idx = self.tabs.addTab(dash, label)
+    self.tabs.setTabToolTip(idx, getattr(storage, 'path', label))
+    self.tabs.setCurrentIndex(idx)
+    self._refresh_title_and_status()
+
+
+def _mw_find_tab_by_path(self, path: str) -> int:
+    target = _norm(path)
+    for i in range(self.tabs.count()):
+        w = self.tabs.widget(i)
+        spath = getattr(getattr(w, 'storage', None), 'path', None)
+        if spath and _norm(spath) == target:
+            return i
+    return -1
+
+
+def _mw_current_dashboard(self):
+    return self.tabs.currentWidget() if hasattr(self, 'tabs') else None
+
+
+def _mw_current_storage(self):
+    w = _mw_current_dashboard(self)
+    return getattr(w, 'storage', None) if w else None
+
+
+def _mw_close_tab_index(self, index: int):
+    if index < 0 or index >= self.tabs.count():
+        return
+    self.tabs.removeTab(index)
+    self._refresh_title_and_status()
+
+
+def _mw_new_vault(self):
+    base = _base_dir()
+    os.makedirs(base, exist_ok=True)
+    path, _ = QFileDialog.getSaveFileName(
+        self,
+        "Create New Vault",
+        os.path.join(base, "new_vault.psf"),
+        "Vault Files (*.psf);;All Files (*)",
+    )
+    if not path:
+        return
+    if _mw_find_tab_by_path(self, path) >= 0:
+        self.tabs.setCurrentIndex(_mw_find_tab_by_path(self, path))
+        return
+    _ensure_dir(path)
+    storage = VaultStorage(path)
+    dlg = LoginDialog(storage)
+    if dlg.exec_() != QDialog.Accepted:
+        return
+    _mw_add_tab_for_storage(self, storage)
+
+
+def _mw_open_vault(self):
+    base = _base_dir()
+    os.makedirs(base, exist_ok=True)
+    path, _ = QFileDialog.getOpenFileName(
+        self,
+        "Open Vault",
+        base,
+        "Vault Files (*.psf *.json);;All Files (*)",
+    )
+    if not path:
+        return
+    existing = _mw_find_tab_by_path(self, path)
+    if existing >= 0:
+        self.tabs.setCurrentIndex(existing)
+        return
+    storage = VaultStorage(path)
+    dlg = LoginDialog(storage)
+    if dlg.exec_() != QDialog.Accepted:
+        return
+    _mw_add_tab_for_storage(self, storage)
+
+
+# Bind helpers to MainWindow
+MainWindow._add_tab_for_storage = _mw_add_tab_for_storage
+MainWindow._find_tab_by_path = _mw_find_tab_by_path
+MainWindow._current_dashboard = _mw_current_dashboard
+MainWindow._current_storage = _mw_current_storage
+MainWindow._close_tab_index = _mw_close_tab_index
+MainWindow._new_vault = _mw_new_vault
+MainWindow._open_vault = _mw_open_vault
 
 
 def main():

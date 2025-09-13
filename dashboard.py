@@ -637,6 +637,23 @@ class VaultDashboard(QWidget):
         except Exception:
             pass
 
+    # Lock/unlock UI helpers
+    def lock_ui(self):
+        try:
+            self.setEnabled(False)
+            # Clear sensitive fields
+            self.passwordField.clear()
+            self._clear_form()
+        except Exception:
+            pass
+
+    def unlock_ui(self):
+        try:
+            self.setEnabled(True)
+            self._load_entries()
+        except Exception:
+            pass
+
     def _open_url(self):
         url = self.urlField.text().strip()
         if not url:
