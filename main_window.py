@@ -169,7 +169,7 @@ class MainWindow(QMainWindow):
         faq_action = QAction("FAQ", self)
         faq_action.triggered.connect(self._faq)
         help_menu.addAction(faq_action)
-        terms_action = QAction("Terms & Privacy…", self)
+        terms_action = QAction("Legal & Privacy…", self)
         terms_action.triggered.connect(self._show_terms)
         help_menu.addAction(terms_action)
 
@@ -246,7 +246,7 @@ class MainWindow(QMainWindow):
             "</ul>"
         )
         box = QMessageBox(self)
-        box.setWindowTitle("Password Safe – Terms & Privacy")
+        box.setWindowTitle("Password Safe – Legal & Privacy")
         box.setIcon(QMessageBox.Information)
         box.setTextFormat(QtCore.Qt.RichText)
         box.setText(text)

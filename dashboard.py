@@ -29,21 +29,28 @@ class EntryTree(QTreeWidget):
         self.setDragDropMode(QAbstractItemView.InternalMove)
 
     def dropEvent(self, event):
+        # Remember selected entry id to restore selection
+        target_entry_id = None
+        sel = self.selectedItems() or []
+        for it in sel:
+            eid = it.data(0, Qt.UserRole)
+            if eid:
+                target_entry_id = eid
+                break
         try:
             target = self.itemAt(event.pos())
             # If dropping on an entry, use its parent folder
             if target and target.data(0, Qt.UserRole) is not None:
                 target = target.parent()
             dest_folder = self.owner._item_path(target) if target else "Other"
-            for it in self.selectedItems() or []:
+            for it in sel:
                 eid = it.data(0, Qt.UserRole)
                 if eid:
                     self.owner.storage.update_entry(eid, {"folder": dest_folder})
         except Exception:
             pass
         super().dropEvent(event)
-        # Reload to reflect canonical structure
-        self.owner._load_entries()
+        self.owner._reload_preserving_state(target_entry_id)
 
 
 class VaultDashboard(QWidget):
@@ -408,7 +415,7 @@ class VaultDashboard(QWidget):
             entry = next((e for e in self.storage.list_entries() if e["id"] == entry_id), None)
             if entry:
                 self.storage.update_entry(entry_id, {"folder": folder_name})
-                self._load_entries()
+                self._reload_preserving_state(entry_id)
 
     def _load_entries(self):
         self.entry_tree.clear()
@@ -439,6 +446,64 @@ class VaultDashboard(QWidget):
             self.entries_changed.emit()
         except Exception:
             pass
+
+    # --- Tree state helpers ---
+    def _collect_expanded_paths(self):
+        paths = []
+        def walk(it, base=None):
+            if it is None:
+                return
+            name = it.text(0)
+            path = name if not base else f"{base}/{name}"
+            if it.isExpanded():
+                paths.append(path)
+            for i in range(it.childCount()):
+                # only folders (no user role id)
+                ch = it.child(i)
+                if ch.data(0, Qt.UserRole) is None:
+                    walk(ch, path)
+        for i in range(self.entry_tree.topLevelItemCount()):
+            top = self.entry_tree.topLevelItem(i)
+            if top and top.data(0, Qt.UserRole) is None:
+                walk(top)
+        return paths
+
+    def _restore_expanded_paths(self, paths):
+        for p in paths or []:
+            try:
+                it = self._get_or_create_folder_item(p)
+                if it:
+                    it.setExpanded(True)
+            except Exception:
+                pass
+
+    def _find_item_by_entry_id(self, entry_id):
+        for i in range(self.entry_tree.topLevelItemCount()):
+            stack = [self.entry_tree.topLevelItem(i)]
+            while stack:
+                it = stack.pop()
+                if it and it.data(0, Qt.UserRole) == entry_id:
+                    return it
+                for j in range(it.childCount()):
+                    stack.append(it.child(j))
+        return None
+
+    def _reload_preserving_state(self, select_entry_id=None):
+        expanded = self._collect_expanded_paths()
+        if select_entry_id is None:
+            # use current selection if it's an entry
+            items = self.entry_tree.selectedItems()
+            if items:
+                eid = items[0].data(0, Qt.UserRole)
+                if eid:
+                    select_entry_id = eid
+        self._load_entries()
+        self._restore_expanded_paths(expanded)
+        if select_entry_id:
+            it = self._find_item_by_entry_id(select_entry_id)
+            if it:
+                self.entry_tree.setCurrentItem(it)
+                self._on_select_tree()
 
     def _filter_tree(self, term):
         term = (term or "").strip().lower()
@@ -652,13 +717,13 @@ class VaultDashboard(QWidget):
                 return
             elif clicked is new_btn:
                 created = self.storage.add_entry(entry)
-                self._load_entries()
                 self.current_id = created["id"]
+                self._reload_preserving_state(self.current_id)
                 QMessageBox.information(self, "Saved", f"New entry '{entry['name']}' added.")
             else:
                 updated = entry.copy()
                 self.storage.update_entry(self.current_id, updated)
-                self._load_entries()
+                self._reload_preserving_state(self.current_id)
                 QMessageBox.information(self, "Saved", "Entry updated.")
                 try:
                     self.entries_changed.emit()
@@ -666,13 +731,9 @@ class VaultDashboard(QWidget):
                     pass
         else:
             created = self.storage.add_entry(entry)
-            self._load_entries()
             self.current_id = created["id"]
+            self._reload_preserving_state(self.current_id)
             QMessageBox.information(self, "Success", f"Entry '{entry['name']}' added.")
-            try:
-                self.entries_changed.emit()
-            except Exception:
-                pass
             try:
                 self.entries_changed.emit()
             except Exception:

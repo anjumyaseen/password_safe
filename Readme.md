@@ -80,13 +80,17 @@ password_safe/
 Using [PyInstaller](https://pyinstaller.org/):
 
 ```bash
-# Windows requires an .ico for the EXE icon
-# Convert the provided PNG once (e.g., with Paint/online/Imagemagick) to icon-safe.ico
+# 1) Generate the .ico (Windows requires ICO for the EXE)
+pip install pillow
+python tools/make_ico.py  # creates icon-safe.ico next to icon-safe.png
+
+# 2) Build the EXE
 pyinstaller --onefile --noconsole --name PasswordSafe --icon=icon-safe.ico main.py
 ```
 
 - Window/taskbar icon at runtime uses the app icon set in code (`icon-safe.png`).
 - Pinned/EXE icon uses the `.ico` embedded via the `--icon` flag above.
+- Remove older icons (e.g., `new-cir-logo.ico`) to avoid confusion; use `icon-safe.png`/`icon-safe.ico` consistently.
 
 * Output binary: `dist/PasswordSafe.exe`
 * Ship this `.exe` to end users.
