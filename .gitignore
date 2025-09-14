@@ -1,53 +1,36 @@
-# Byte-compiled / optimized / DLL files
+# Byte-compiled / cache
 __pycache__/
 *.py[cod]
-*$py.class
+*.pyo
 
-# Virtual environment
+# Virtual environments
 .venv/
-env/
 venv/
+ENV/
+safe/
 
-# Distribution / packaging
+# Build artifacts
 build/
 dist/
-*.egg-info/
-*.egg
 *.spec
 
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
+# Test / coverage
 .pytest_cache/
-nosetests.xml
+.mypy_cache/
+.coverage
 coverage.xml
 
-# IDE / Editor files
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS-specific
+# Editors/OS
 .DS_Store
 Thumbs.db
-desktop.ini
+.idea/
+.vscode/
 
-# Logs
-*.log
+# Local env
+.env
+.env.*
 
-# Local vault storage (don’t put user secrets in git!)
-.simple_vault/
+# Local vaults (if created under repo by mistake)
 vault.json
+*.vault.json
 
-# Project specific
-assets/__pycache__/
-*.ico
