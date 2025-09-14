@@ -7,7 +7,7 @@ reporting issues to ensure the problem still exists.
 
 ## Reporting a Vulnerability
 
-Please email security reports to: security@yourdomain.example
+Please email security reports to: anjumy.ai@gmail.com
 
 You can also open a private security advisory on GitHub if your repo has it enabled.
 
