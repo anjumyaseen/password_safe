@@ -172,3 +172,32 @@ Open via Edit → Preferences…
 - Lock Now: File → Lock Now (Ctrl+L) immediately locks the app (for all tabs).
 - Auto‑lock: enabled by default at 60 seconds; change or disable in Preferences (in seconds). Any user activity resets the timer.
 - Unlock: Help → Unlock Current Vault… prompts for the master password and re‑enables the active tab.
+
+---
+
+## 📄 Terms of Use
+
+This software (“Password Safe”) is provided free of charge for personal use. By using it, you agree to the following:
+
+- You are solely responsible for safeguarding your master password and vault file(s).
+- The developers are not liable for any data loss, unauthorized access, or damages arising from your use of the software.
+- You may use and distribute the software under the terms of the MIT License (see LICENSE file).
+- These terms may be updated in future versions. Continued use indicates acceptance of any updates.
+
+---
+
+## 🔒 Privacy Statement
+
+- This application is fully local-first: it does not collect, transmit, or store your personal data.
+- All vault data remains encrypted and stored on your device, under your control.
+- No telemetry, analytics, or remote logging is built into the software.
+- If you choose to use external storage (e.g., backups to cloud drives), that usage is entirely under your control and outside the scope of this app.
+
+---
+
+## ⚠️ Disclaimer
+
+- This software is provided “as-is”, without warranty of any kind, express or implied.
+- While modern encryption methods are used, no system is 100% secure.
+- The developers disclaim any responsibility for security incidents, data breaches, or damages that may occur from use or misuse of this software.
+- Always use strong master passwords, maintain offline backups, and practice good security hygiene.

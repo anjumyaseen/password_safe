@@ -10,6 +10,9 @@ DEFAULT_SETTINGS = {
     # Idle lock now expressed in seconds (backward-compatible with legacy minutes key)
     "auto_lock_enabled": True,
     "auto_lock_seconds": 60,
+    # Terms acceptance
+    "terms_accepted": False,
+    "terms_accepted_at": None,
 }
 
 
