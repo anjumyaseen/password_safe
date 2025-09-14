@@ -7,7 +7,8 @@ import unittest
 from datetime import datetime, timezone
 
 import sys
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+# Add project src path for package imports
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 try:
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # noqa: F401
@@ -15,7 +16,7 @@ try:
 except Exception:
     CRYPTO_OK = False
 
-from storage import VaultStorage
+from password_safe.storage import VaultStorage
 
 
 @unittest.skipUnless(CRYPTO_OK, "cryptography not available")

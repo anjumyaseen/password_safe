@@ -1,18 +1,22 @@
-import sys
 import os
+import sys
 from PyQt5.QtWidgets import QApplication, QDialog, QMessageBox
+
 from storage import VaultStorage
 from login_dialog import LoginDialog
 from main_window import MainWindow
 from settings import load_settings, save_settings
 
+
 def default_vault_path():
     base = os.path.join(os.path.expanduser("~"), ".simple_vault")
     return os.path.join(base, "vault.json")
 
+
 def main():
     app = QApplication(sys.argv)
-    # First-run terms acceptance
+
+    # First-run terms acceptance (one-time)
     settings = load_settings()
     if not settings.get("terms_accepted", False):
         text = (
@@ -27,7 +31,7 @@ def main():
         box = QMessageBox()
         box.setWindowTitle("Password Safe – Terms")
         box.setIcon(QMessageBox.Warning)
-        box.setTextFormat(Qt.RichText if 'Qt' in globals() else 1)
+        box.setTextFormat(1)  # RichText
         box.setText(text)
         ok = box.addButton("I Understand", QMessageBox.AcceptRole)
         cancel = box.addButton("Exit", QMessageBox.RejectRole)
@@ -41,6 +45,7 @@ def main():
         except Exception:
             settings["terms_accepted_at"] = None
         save_settings(settings)
+
     storage = VaultStorage(default_vault_path())
     login = LoginDialog(storage)
     if login.exec_() != QDialog.Accepted:
@@ -48,6 +53,7 @@ def main():
     win = MainWindow(storage)
     win.show()
     sys.exit(app.exec_())
+
 
 if __name__ == "__main__":
     main()

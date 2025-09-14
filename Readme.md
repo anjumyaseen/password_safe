@@ -20,7 +20,8 @@ password_safe/
 ├── requirements.txt      # Python dependencies
 ├── tests/                # Unit tests
 ├── .gitignore            # Git ignore rules
-└── Readme.md             # Project documentation
+├── docs/                 # Documentation (CHANGELOG, SECURITY, etc.)
+└── Readme.md             # Project overview
 ```
 
 ---
@@ -149,14 +150,35 @@ Until code-signing is available, verify your binaries after download.
 Compare the output to the SHA256 published on the GitHub Release page.
 Optionally, check the VirusTotal scan link provided in the release notes.
 
+To help, scripts are included:
+
+- Generate checksums:
+
+  ```powershell
+  pwsh tools\make_checksums.ps1 -OutFile SHA256SUMS.txt -Files dist\PasswordSafe.exe
+  ```
+
+- Verify a checksum against the file:
+
+  ```powershell
+  pwsh tools\verify_sha256.ps1 -Sums SHA256SUMS.txt -File dist\PasswordSafe.exe
+  ```
+
+- Upload to VirusTotal (requires API key):
+
+  ```powershell
+  $env:VT_API_KEY = "<your_api_key>"
+  pwsh tools\virustotal_upload.ps1 -File dist\PasswordSafe.exe
+  ```
+
 ---
 
 ## Project Governance
 
 - License: MIT (see `LICENSE`)
-- Security policy: see `SECURITY.md`
-- Contributing guidelines: see `CONTRIBUTING.md`
-- Code of Conduct: see `CODE_OF_CONDUCT.md`
+- Security policy: see `docs/SECURITY.md`
+- Contributing guidelines: see `docs/CONTRIBUTING.md`
+- Code of Conduct: see `docs/CODE_OF_CONDUCT.md`
 
 ---
 
