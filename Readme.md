@@ -20,7 +20,8 @@ password_safe/
 ├── requirements.txt      # Python dependencies
 ├── tests/                # Unit tests
 ├── .gitignore            # Git ignore rules
-└── Readme.md             # Project documentation
+├── docs/                 # Documentation (CHANGELOG, SECURITY, etc.)
+└── Readme.md             # Project overview
 ```
 
 ---
@@ -175,9 +176,9 @@ To help, scripts are included:
 ## Project Governance
 
 - License: MIT (see `LICENSE`)
-- Security policy: see `SECURITY.md`
-- Contributing guidelines: see `CONTRIBUTING.md`
-- Code of Conduct: see `CODE_OF_CONDUCT.md`
+- Security policy: see `docs/SECURITY.md`
+- Contributing guidelines: see `docs/CONTRIBUTING.md`
+- Code of Conduct: see `docs/CODE_OF_CONDUCT.md`
 
 ---
 
