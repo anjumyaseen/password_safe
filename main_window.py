@@ -169,6 +169,9 @@ class MainWindow(QMainWindow):
         faq_action = QAction("FAQ", self)
         faq_action.triggered.connect(self._faq)
         help_menu.addAction(faq_action)
+        terms_action = QAction("Terms & Privacy…", self)
+        terms_action.triggered.connect(self._show_terms)
+        help_menu.addAction(terms_action)
 
     def _about(self):
         cs = self._current_storage() or self.storage
@@ -219,6 +222,36 @@ class MainWindow(QMainWindow):
         Use <i>File → Change Master Password…</i>. The vault is re‑encrypted with the new key.</p>
         """
         QMessageBox.about(self, "FAQ", html)
+
+    def _show_terms(self):
+        text = (
+            "<h3>Terms of Use</h3>"
+            "<p>This software (\"Password Safe\") is provided free of charge for personal use. By using it, you agree that:</p>"
+            "<ul>"
+            "<li>You are solely responsible for safeguarding your master password and vault file(s).</li>"
+            "<li>The developers are not liable for any data loss, unauthorized access, or damages arising from your use of the software.</li>"
+            "<li>The software is provided under the MIT License.</li>"
+            "</ul>"
+            "<h3>Privacy</h3>"
+            "<ul>"
+            "<li>Local-first: the app does not collect, transmit, or store your personal data.</li>"
+            "<li>All vault data remains encrypted and stored on your device.</li>"
+            "<li>No telemetry, analytics, or remote logging.</li>"
+            "</ul>"
+            "<h3>Disclaimer</h3>"
+            "<ul>"
+            "<li>Provided \"as-is\" without warranty of any kind.</li>"
+            "<li>While modern encryption is used, no system is 100% secure.</li>"
+            "<li>Use strong passwords, keep backups, and practice good security hygiene.</li>"
+            "</ul>"
+        )
+        box = QMessageBox(self)
+        box.setWindowTitle("Password Safe – Terms & Privacy")
+        box.setIcon(QMessageBox.Information)
+        box.setTextFormat(QtCore.Qt.RichText)
+        box.setText(text)
+        box.addButton("Close", QMessageBox.AcceptRole)
+        box.exec_()
 
     def _refresh_title_and_status(self):
         cs = self._current_storage() or self.storage
