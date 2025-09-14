@@ -12,16 +12,30 @@ It securely stores your credentials (usernames, emails, URLs, notes) in an encry
 ```
 password_safe/
 │
-├── main.py               # Entry point
-├── main_window.py        # Main window wrapper
-├── login_dialog.py       # Login / unlock dialog
-├── dashboard.py          # Password vault dashboard (UI)
-├── storage.py            # Vault storage and encryption logic (AES‑GCM at rest)
-├── requirements.txt      # Python dependencies
-├── tests/                # Unit tests
-├── .gitignore            # Git ignore rules
-├── docs/                 # Documentation (CHANGELOG, SECURITY, etc.)
-└── Readme.md             # Project overview
+├── assets/
+│   └── app.ico                  # Windows ICO embedded into the EXE
+├── docs/                        # Documentation (CHANGELOG, SECURITY, etc.)
+├── tests/                       # Unit tests
+├── tools/
+│   ├── make_ico.py              # Builds multi-size assets/app.ico from icon-safe.png
+│   ├── make_checksums.ps1       # Generates checksums (.sha256 + checksums.txt)
+│   ├── verify_sha256.ps1        # Verifies SHA256 for a file
+│   └── virustotal_upload.ps1    # Optional VirusTotal upload helper
+│
+├── .gitignore
+├── LICENSE
+├── PasswordSafe.spec            # PyInstaller spec (reproducible build)
+├── Readme.md
+│
+├── main.py                      # Entry point
+├── main_window.py               # Main window wrapper
+├── login_dialog.py              # Login / unlock dialog
+├── dashboard.py                 # Password vault dashboard (UI)
+├── storage.py                   # Vault storage and encryption logic (AES-GCM at rest)
+├── settings.py
+├── requirements.txt
+├── icon-safe.png                # App/icon source (PNG)
+└── __init__.py
 ```
 
 ---
@@ -36,12 +50,12 @@ password_safe/
 * ✏️ Add / edit / delete / copy credentials
 * 🌐 Open stored URLs directly in browser
 * 📝 Notes & tags per entry
-* 📦 Encryption at rest (AES‑GCM via `cryptography`), vault stored at `~/.simple_vault/vault.json`
+* 📦 Encryption at rest (AES-GCM via `cryptography`), vault stored at `~/.simple_vault/vault.json`
 * 🔁 Automatic migration of older plaintext vaults on first unlock
 * 🗂️ Custom folders and nested subfolders (use paths like `Entertainment/Netflix`)
 * ⬆️ Export Encrypted by default; plaintext export only under Advanced with strong warnings
-* 🧷 Multi‑vault tabs: open multiple vaults side‑by‑side (New/Open/Close)
-* 🔒 Idle auto‑lock and Lock Now menu for quick security
+* 🧷 Multi-vault tabs: open multiple vaults side-by-side (New/Open/Close)
+* 🔒 Idle auto-lock and Lock Now menu for quick security
 
 ---
 
@@ -50,8 +64,8 @@ password_safe/
 1. Clone this repo:
 
    ```bash
-   git clone https://github.com/yourname/password-safe.git
-   cd password-safe
+   git clone https://github.com/anjumyaseen/password_safe.git
+   cd password_safe
    ```
 
 2. Create a virtual environment:
@@ -83,25 +97,32 @@ Using [PyInstaller](https://pyinstaller.org/):
 ```bash
 # 1) Generate the .ico (Windows requires ICO for the EXE)
 pip install pillow
-python tools/make_ico.py  # creates icon-safe.ico next to icon-safe.png
+python tools/make_ico.py    # creates assets\app.ico from icon-safe.png
 
-# 2) Place final icon
-mkdir -p assets
-copy icon-safe.ico assets\app.ico   # Windows
+# 2) Build the EXE
 
-# 3) Build the EXE (option A: CLI)
-pyinstaller --onefile --windowed --name PasswordSafe --icon=assets/app.ico --add-data "icon-safe.png;." main.py
+# Option A: CLI (quick test build)
+# (Include paths + hidden imports so local modules resolve.)
+pyinstaller --onefile --windowed ^
+  --name PasswordSafe ^
+  --icon=assets/app.ico ^
+  --paths . ^
+  --hidden-import storage ^
+  --hidden-import settings ^
+  --hidden-import main_window ^
+  --hidden-import login_dialog ^
+  --hidden-import dashboard ^
+  --add-data "icon-safe.png;." ^
+  main.py
 
-#    Build the EXE (option B: spec file)
-#    The spec keeps flags consistent across builds.
-pyinstaller --onefile PasswordSafe.spec
+# Option B: spec file (recommended, reproducible)
+pyinstaller --clean --noconfirm .\PasswordSafe.spec
 ```
 
-- Window/taskbar icon at runtime uses the app icon set in code (`icon-safe.png`).
-- Pinned/EXE icon uses the `.ico` embedded via the `--icon` flag above.
-- Remove older icons (e.g., `new-cir-logo.ico`) to avoid confusion; use `icon-safe.png`/`assets/app.ico` consistently.
+- Desktop/taskbar icon (at runtime UI) still uses `icon-safe.png`.
+- The pinned/EXE icon comes from the embedded `assets\app.ico`.
 
-* Output binary: `dist/PasswordSafe.exe`
+* Output binary: `dist\PasswordSafe.exe`
 * Ship this `.exe` to end users.
 * (Optional) wrap into an installer with [Inno Setup](https://jrsoftware.org/isinfo.php).
 
@@ -123,7 +144,7 @@ MIT License – feel free to use and modify.
 
 ## 🔒 Security Notes
 
-- Encryption: Entries are encrypted at rest using AES‑GCM with a key derived from your master password (PBKDF2‑HMAC‑SHA256).
+- Encryption: Entries are encrypted at rest using AES-GCM with a key derived from your master password (PBKDF2-HMAC-SHA256).
 - Migration: If a legacy plaintext vault is detected, it is encrypted automatically after the first successful unlock.
 - Export: The Export to JSON feature writes unencrypted data for portability. Treat exported files as sensitive and remove them when no longer needed.
   - Recommended: Use "Export Encrypted…" (default) for sharing or backup. A passphrase is required and an encrypted `.vaultenc` file is created.
@@ -187,22 +208,22 @@ To help, scripts are included:
 Open via Edit → Preferences…
 
 - Clipboard auto-clear: Number of seconds before the clipboard is cleared after a Copy (default 30s). A live countdown appears in the main window status bar at the bottom (e.g., “Password copied. Clears in 29s”). The app clears the clipboard only if it still contains the same copied value, so it won’t erase newer clipboard content.
-- Require “Show” before copying password: Optional UX guardrail. When enabled, the password must be visible (Show checked) before it can be copied. This reduces accidental copies but can increase shoulder‑surfing risk; leave off unless you value the extra step. Default: off.
-- Plaintext export auto-delete (seconds): Best‑effort timer to delete a plaintext export created via Advanced → Export Plaintext. Works only while the app remains open and is not a secure wipe (no disk overwrite).
-- Auto‑lock: Option to enable idle auto‑lock and choose the timeout (seconds). When locked, use Help → Unlock Current Vault… (or simply perform an action) to re‑enter your master password and unlock.
+- Require “Show” before copying password: Optional UX guardrail. When enabled, the password must be visible (Show checked) before it can be copied. This reduces accidental copies but can increase shoulder-surfing risk; leave off unless you value the extra step. Default: off.
+- Plaintext export auto-delete (seconds): Best-effort timer to delete a plaintext export created via Advanced → Export Plaintext. Works only while the app remains open and is not a secure wipe (no disk overwrite).
+- Auto-lock: Option to enable idle auto-lock and choose the timeout (seconds). When locked, use Help → Unlock Current Vault… (or simply perform an action) to re-enter your master password and unlock.
   - Default: 5 minutes (300 s). Change under Edit → Preferences…
 
 ---
 
 ## ⬆️ Export / ⬇️ Import
 
-- Export Encrypted…: File → Export → Export Encrypted… (recommended). Prompts for a passphrase, produces a `.vaultenc` file using AES‑GCM with PBKDF2‑SHA256 (200k iterations).
+- Export Encrypted…: File → Export → Export Encrypted… (recommended). Prompts for a passphrase, produces a `.vaultenc` file using AES-GCM with PBKDF2-SHA256 (200k iterations).
 - Import Encrypted…: File → Import Encrypted… Select a `.vaultenc`, enter the passphrase, and the entries are imported with new IDs.
-- Export Plaintext (Not Recommended): File → Export → Advanced → Export Plaintext… Requires typing `YES` in a confirmation dialog. Optionally schedule auto‑delete (see Preferences). Treat the resulting `.json` as highly sensitive.
+- Export Plaintext (Not Recommended): File → Export → Advanced → Export Plaintext… Requires typing `YES` in a confirmation dialog. Optionally schedule auto-delete (see Preferences). Treat the resulting `.json` as highly sensitive.
 
 ---
 
-## 🗂️ Multi‑Vault Tabs
+## 🗂️ Multi-Vault Tabs
 
 - File → New Vault…: choose a filename (e.g., `personal.psf`), set a master password, opens as a new tab.
 - File → Open Vault…: pick an existing vault and unlock; opens as a new tab. Duplicate opens activate the existing tab.
@@ -213,8 +234,8 @@ Open via Edit → Preferences…
 ## 🔒 Locking
 
 - Lock Now: File → Lock Now (Ctrl+L) immediately locks the app (for all tabs).
-- Auto‑lock: enabled by default at 5 minutes (300 s); change or disable in Preferences (in seconds). Any user activity resets the timer.
-- Unlock: Help → Unlock Current Vault… prompts for the master password and re‑enables the active tab.
+- Auto-lock: enabled by default at 5 minutes (300 s); change or disable in Preferences (in seconds). Any user activity resets the timer.
+- Unlock: Help → Unlock Current Vault… prompts for the master password and re-enables the active tab.
 
 ---
 
