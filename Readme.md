@@ -84,13 +84,17 @@ Using [PyInstaller](https://pyinstaller.org/):
 pip install pillow
 python tools/make_ico.py  # creates icon-safe.ico next to icon-safe.png
 
-# 2) Build the EXE
-pyinstaller --onefile --noconsole --name PasswordSafe --icon=icon-safe.ico main.py
+# 2) Place final icon
+mkdir -p assets
+copy icon-safe.ico assets\app.ico   # Windows
+
+# 3) Build the EXE
+pyinstaller --onefile --windowed --name PasswordSafe --icon=assets/app.ico --add-data "icon-safe.png;." main.py
 ```
 
 - Window/taskbar icon at runtime uses the app icon set in code (`icon-safe.png`).
 - Pinned/EXE icon uses the `.ico` embedded via the `--icon` flag above.
-- Remove older icons (e.g., `new-cir-logo.ico`) to avoid confusion; use `icon-safe.png`/`icon-safe.ico` consistently.
+- Remove older icons (e.g., `new-cir-logo.ico`) to avoid confusion; use `icon-safe.png`/`assets/app.ico` consistently.
 
 * Output binary: `dist/PasswordSafe.exe`
 * Ship this `.exe` to end users.
@@ -140,6 +144,15 @@ Until code-signing is available, verify your binaries after download.
 
 Compare the output to the SHA256 published on the GitHub Release page.
 Optionally, check the VirusTotal scan link provided in the release notes.
+
+---
+
+## Project Governance
+
+- License: MIT (see `LICENSE`)
+- Security policy: see `SECURITY.md`
+- Contributing guidelines: see `CONTRIBUTING.md`
+- Code of Conduct: see `CODE_OF_CONDUCT.md`
 
 ---
 
