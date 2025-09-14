@@ -12,17 +12,29 @@ safe/
 # Build artifacts
 build/
 dist/
-*.spec
+
+# Keep the build recipe!
+# (Do NOT ignore the spec; it should be versioned)
+#! *.spec
 
 # Test / coverage
 .pytest_cache/
 .mypy_cache/
 .coverage
+.coverage.*
 coverage.xml
+htmlcov/
+
+# Packaging
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
 
 # Editors/OS
 .DS_Store
 Thumbs.db
+Desktop.ini
+ehthumbs.db
 .idea/
 .vscode/
 
@@ -34,3 +46,19 @@ Thumbs.db
 vault.json
 *.vault.json
 
+# Logs / temp
+*.log
+*.tmp
+*.bak
+
+# Keys / certificates (security)
+*.pfx
+*.p12
+*.pem
+*.key
+*.cer
+*.crt
+
+# Tools/CI caches
+.ruff_cache/
+.tox/
