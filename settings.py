@@ -9,7 +9,7 @@ DEFAULT_SETTINGS = {
     "plaintext_export_autodelete_sec": 600,
     # Idle lock now expressed in seconds (backward-compatible with legacy minutes key)
     "auto_lock_enabled": True,
-    "auto_lock_seconds": 60,
+    "auto_lock_seconds": 300,
     # Terms acceptance
     "terms_accepted": False,
     "terms_accepted_at": None,

@@ -163,8 +163,8 @@ Open via Edit → Preferences…
 - Clipboard auto-clear: Number of seconds before the clipboard is cleared after a Copy (default 30s). A live countdown appears in the main window status bar at the bottom (e.g., “Password copied. Clears in 29s”). The app clears the clipboard only if it still contains the same copied value, so it won’t erase newer clipboard content.
 - Require “Show” before copying password: Optional UX guardrail. When enabled, the password must be visible (Show checked) before it can be copied. This reduces accidental copies but can increase shoulder‑surfing risk; leave off unless you value the extra step. Default: off.
 - Plaintext export auto-delete (seconds): Best‑effort timer to delete a plaintext export created via Advanced → Export Plaintext. Works only while the app remains open and is not a secure wipe (no disk overwrite).
-- Auto‑lock: Option to enable idle auto‑lock and choose the timeout (minutes). When locked, use Help → Unlock Current Vault… (or simply perform an action) to re‑enter your master password and unlock.
-  - Default: 5 minutes. Change under Edit → Preferences…
+- Auto‑lock: Option to enable idle auto‑lock and choose the timeout (seconds). When locked, use Help → Unlock Current Vault… (or simply perform an action) to re‑enter your master password and unlock.
+  - Default: 5 minutes (300 s). Change under Edit → Preferences…
 
 ---
 
@@ -187,7 +187,7 @@ Open via Edit → Preferences…
 ## 🔒 Locking
 
 - Lock Now: File → Lock Now (Ctrl+L) immediately locks the app (for all tabs).
-- Auto‑lock: enabled by default at 60 seconds; change or disable in Preferences (in seconds). Any user activity resets the timer.
+- Auto‑lock: enabled by default at 5 minutes (300 s); change or disable in Preferences (in seconds). Any user activity resets the timer.
 - Unlock: Help → Unlock Current Vault… prompts for the master password and re‑enables the active tab.
 
 ---
