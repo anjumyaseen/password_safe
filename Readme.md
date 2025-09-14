@@ -88,8 +88,12 @@ python tools/make_ico.py  # creates icon-safe.ico next to icon-safe.png
 mkdir -p assets
 copy icon-safe.ico assets\app.ico   # Windows
 
-# 3) Build the EXE
+# 3) Build the EXE (option A: CLI)
 pyinstaller --onefile --windowed --name PasswordSafe --icon=assets/app.ico --add-data "icon-safe.png;." main.py
+
+#    Build the EXE (option B: spec file)
+#    The spec keeps flags consistent across builds.
+pyinstaller --onefile PasswordSafe.spec
 ```
 
 - Window/taskbar icon at runtime uses the app icon set in code (`icon-safe.png`).
