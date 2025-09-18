@@ -2,8 +2,13 @@
 
 # 📦 Password Safe (v1.0.0)
 
-A simple **local password manager** built with **Python + PyQt5**.
-It securely stores your credentials (usernames, emails, URLs, notes) in an encrypted vault file, with search, password generation, and folder organization.
+A lightweight, local-first password vault for Windows.  
+Your data is encrypted at rest using **AES-GCM** and never leaves your machine.
+
+[![GitHub release](https://img.shields.io/github/v/release/anjumyaseen/password_safe?style=for-the-badge)](https://github.com/anjumyaseen/password_safe/releases/latest)
+[![GitHub all releases](https://img.shields.io/github/downloads/anjumyaseen/password_safe/total?style=for-the-badge)](https://github.com/anjumyaseen/password_safe/releases)
+[![License](https://img.shields.io/github/license/anjumyaseen/password_safe?style=for-the-badge)](LICENSE)
+
 
 ---
 
@@ -58,6 +63,21 @@ password_safe/
 * 🔒 Idle auto-lock and Lock Now menu for quick security
 
 ---
+
+## 🚀 Download
+
+[![GitHub release](https://img.shields.io/github/v/release/anjumyaseen/password_safe?style=for-the-badge)](https://github.com/anjumyaseen/password_safe/releases/latest)
+[![GitHub all releases](https://img.shields.io/github/downloads/anjumyaseen/password_safe/total?style=for-the-badge)](https://github.com/anjumyaseen/password_safe/releases)
+
+👍 **[Latest Release](https://github.com/anjumyaseen/password_safe/releases/latest)**  
+
+⬇️ **[PasswordSafe.exe](https://github.com/anjumyaseen/password_safe/releases/download/v1.0.0/PasswordSafe.exe)**  
+
+🔑 **[checksums.txt](https://github.com/anjumyaseen/password_safe/releases/download/v1.0.0/checksums.txt)**  
+
+
+---
+
 
 ## 🛠️ Installation (Development)
 
